@@ -293,34 +293,44 @@ typedef struct Target {
 } Target;
 
 /*!
- * Indicates whether a statement is an assignment statement, an augmented
- * assignment statement, or a "del" statement.
- */
-typedef enum StatementType {
-    T_AssignmentStatement,
-    T_AugmentedAssignment,
-    T_DelStatement
-} StatementType;
-
-/*!
  * An assignment statement is used to (re)bind names to values and to
  * modify attributes or items of mutable objects. For example, the statement
- * "a, b = 2, 4" is an assignment statement.
+ * "a, b = 2, 4" is an assignment statement. Additionally, the statement
+ * "a, b, c = d, e, f = 1, 2, 3" is another example.
  *
- * Note that the left hand side can either be just one element (in which
+ * Note that anything on the left hand side can  be just one element (in which
  * case the right hand side must also be just one element), or it can be
  * an iterable of some sort, in which case the right hand side must be
  * an iterable of the same length.
  */
 typedef struct AssignmentStatement {
-    /*! The list of targets to which values will be assigned. */
-    Target **target_list;
+    /*!
+     * The list of target lists to which values will be assigned. Each element
+     * in this list is a list of targets. For example, in the assignment
+     * "a, b = c, d = 1, 2", the target lists would be ['a', 'b'] and ['c',
+     * 'd'].
+     */
+    Target ***target_list_list;
 
-    /*! The list of expressions which will be assigned to the targets. */
+    /*!
+     * The list of expressions which will be assigned to the targets. For
+     * example, in the assignment "a, b = c, d = 1, 2", the expression list
+     * would be [1, 2].
+     */
     Expression **expression_list;
 
-    /*! The length of both of the previous two lists. */
-    int assignment_length;
+    /*!
+     * The length of the list of expressions. For example, in the
+     * assignment "a, b, c = d, e, f = 1, 2, 3", this value would be 3.
+     * Note that this must match the number of targets per list of targets.
+     */
+    int num_expressions;
+
+    /*!
+     * The number of lists of targets. For example, in the assignment
+     * "a, b, c = d, e, f = 1, 2, 3", this value would be 2.
+     */
+    int num_target_lists;
 } AssignmentStatement;
 
 /*!
@@ -354,6 +364,16 @@ typedef struct DelStatement {
 } DelStatement;
 
 /*!
+ * Indicates whether a statement is an assignment statement, an augmented
+ * assignment statement, or a "del" statement.
+ */
+typedef enum StatementType {
+    T_AssignmentStatement,
+    T_AugmentedAssignment,
+    T_DelStatement
+} StatementType;
+
+/*!
  * Statements represent a single logical line in Python code. In our case, they
  * must be one of the following:
  *     - An assignment statement (e.g. "a = 2")
@@ -366,8 +386,6 @@ typedef struct DelStatement {
  * This allows multiple assignment, i.e. "a, b = 2, a" is allowed.
  */
 typedef struct Statement {
-    /*!
-     */
     StatementType type;
 
     /*! The statement itself. */
