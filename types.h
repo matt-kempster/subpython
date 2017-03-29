@@ -3,6 +3,9 @@
  * interpreter.
  */
 
+#ifndef TYPES_H
+#define TYPES_H
+
 #include <stdbool.h>
 
 
@@ -361,6 +364,7 @@ typedef struct AugmentedAssignment {
  */
 typedef struct DelStatement {
     Target **target_list;
+    int length;
 } DelStatement;
 
 /*!
@@ -390,8 +394,10 @@ typedef struct Statement {
 
     /*! The statement itself. */
     union {
-        AssignmentStatement assign_stmt;
-        AugmentedAssignment augmented_stmt;
-        DelStatement del_stmt;
+        AssignmentStatement *assign_stmt;
+        AugmentedAssignment *augmented_stmt;
+        DelStatement *del_stmt;
     };
 } Statement;
+
+#endif /* TYPES_H */
