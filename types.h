@@ -368,10 +368,11 @@ typedef struct DelStatement {
 } DelStatement;
 
 /*!
- * Indicates whether a statement is an assignment statement, an augmented
- * assignment statement, or a "del" statement.
+ * Indicates whether a statement is an expression statement, an assignment
+ * statement, an augmented assignment statement, or a "del" statement.
  */
 typedef enum StatementType {
+    T_ExpressionStatement
     T_AssignmentStatement,
     T_AugmentedAssignment,
     T_DelStatement
@@ -380,6 +381,7 @@ typedef enum StatementType {
 /*!
  * Statements represent a single logical line in Python code. In our case, they
  * must be one of the following:
+ *     - A list of expressions (e.g. "a" or "a, b")
  *     - An assignment statement (e.g. "a = 2")
  *     - An augmented assignment statement (e.g. "a += 2")
  *     - A del statement (e.g. "del a")
@@ -394,10 +396,14 @@ typedef struct Statement {
 
     /*! The statement itself. */
     union {
+        Expression **expression_stmt;
         AssignmentStatement *assign_stmt;
         AugmentedAssignment *augmented_stmt;
         DelStatement *del_stmt;
     };
+
+    /*! Used only for expression statements! Indicates length of the list. */
+    int length;
 } Statement;
 
 #endif /* TYPES_H */
