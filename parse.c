@@ -37,13 +37,9 @@ typedef enum TokenType {
 
     COMMA,       /*!< Comma. */
 
-    /* TODO: See below; erroneous for the same reason strings are. */
-    SQUOTE,      /*!< Single-quote. */
-    DQUOTE,      /*!< Double-quote. */
-
-    /* TODO: These two are erroneous. Will fix when writing tokenizer. */
-    INTEGER,     /*!< An integer of some sort. Contains at least 1 digit. */
-    STRING,      /*!< A string of some sort. Consists of a-z, A-Z, _, 0-9. */
+    INTEGER,     /*!< An integer of some sort. Composed of digits 0-9. */
+    STRING,      /*!< A string-literal. Composed of any characters. */
+    IDENT,       /*!< An identifier for a variable. */
 
     ERROR,       /*!< Ran into a parsing error.  */
     OTHER,       /*!< Placeholder to make things compile. */
@@ -77,12 +73,18 @@ bool is_del(char initial) {
     return true;
 }
 
+int is_ident_char(int ch) {
+    return (isalnum(ch) || ch == '_');
+}
+
 /*!
  *
  */
 TokenType next_token() {
-    char ch;
+    char ch, quote_char;
     bool keep_going;
+    int i;
+    int (*pred)(int);
 
     /* Consume whitespace and comments. */
     while (1) {
@@ -159,19 +161,72 @@ TokenType next_token() {
             case ',':
                 curr_token.type = COMMA;
                 break;
-            case '\'':
-                curr_token.type = SQUOTE;
-                break;
-            case '\"':
-                curr_token.type = DQUOTE;
-                break;
             default:
                 keep_going = true;
                 break;
         }
 
         if (keep_going) {
-            /* Need to read a string of some kind. */
+            /**
+             * Need to read a string of some sort; an integer literal, a string
+             * literal (contained within quotes), or an identifier for a
+             * variable.
+             */
+            if (ch == '\"' || ch == '\'') {
+                /* Quoted string, aka string literal. */
+                curr_token.type = STRING;
+                quote_char = ch;
+
+                for (i = 0; i < MAX_LENGTH; i++) {
+                    ch = fgetc(stdin);
+
+                    if (ch == EOF || ch == '\r' || ch == '\n') {
+                        fprintf(stderr, "Keep strings to one line for now!\n");
+                        curr_token.type = ERROR;
+                    }
+
+                    if (ch == quote_char) {
+                        curr_token.string[i] = '\0';
+                        break;
+                    }
+
+                    curr_token.string[i] = ch;
+                }
+            } else {
+                /**
+                 * Need to read an integer or an ident. Integers are composed
+                 * entirely of digits 0-9, while idents cannot start with
+                 * digits and must be composed entirely of alphanumerics and
+                 * underscores.
+                 */
+                if (isdigit(ch)) {
+                    curr_token.type = INTEGER;
+                    pred = &isdigit;
+                } else if (isalpha(ch) || ch == '_') {
+                    curr_token.type = IDENT;
+                    pred = &is_ident_char;
+                } else {
+                    curr_token.type = ERROR;
+                    goto Done;
+                }
+
+                curr_token.string[0] = ch;
+                for (i = 1; i < MAX_LENGTH; i++) {
+                    ch = fgetc(stdin);
+
+                    if (ch == EOF || ch == '\r' || ch == '\n' || isspace(ch)) {
+                        curr_token.string[i] = '\0';
+                        break;
+                    }
+
+                    if (!pred(ch)) {
+                        curr_token.type = ERROR;
+                        break;
+                    }
+
+                    curr_token.string[i] = ch;
+                }
+            }
         }
     }
 
@@ -206,24 +261,9 @@ Literal *read_literal() {
         return make_literal(T_Int, (void *) value);
     }
 
-    if (accept(SQUOTE)) {
-        if (accept(STRING)) {
-            strcpy(string, curr_token.string);
-            if (accept(SQUOTE)) {
-                return make_literal(T_String, string);
-            } else {
-                free(string);
-            }
-        }
-    } else if (accept(DQUOTE)) {
-        if (accept(STRING)) {
-            strcpy(string, curr_token.string);
-            if (accept(DQUOTE)) {
-                return make_literal(T_String, string);
-            } else {
-                free(string);
-            }
-        }
+    if (accept(STRING)) {
+        string = strdup(curr_token.string);
+        return make_literal(T_String, (void *) string);
     }
 
     return NULL;
@@ -522,21 +562,8 @@ Primary *read_primary() {
 }
 
 char *read_identifier() {
-    int i;
-
-    if (accept(STRING)) {
-        /* Make sure the string is actually an identifier. */
-        if (isdigit(curr_token.string[0])) {
-            return NULL;
-        } else {
-            for (i = 0; curr_token.string[i] != '\0'; i++) {
-                if (!isalnum(curr_token.string[i]) &&
-                    curr_token.string[i] != '_') {
-                    return NULL;
-                }
-            }
-            return strdup(curr_token.string);
-        }
+    if (accept(IDENT)) {
+        return strdup(curr_token.string);
     }
     return NULL;
 }
