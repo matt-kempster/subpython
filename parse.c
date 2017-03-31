@@ -15,6 +15,7 @@
 typedef enum TokenType {
     STREAM_END,  /*!< Hit end of line or EOF while trying to parse. */
 
+    /* TODO: when more keywords added (lambda, ...), replace with KEYWORD */
     DEL,         /*!< Deletion keyword. */
 
     RPAREN,      /*!< Right parenthesis. */
@@ -36,6 +37,7 @@ typedef enum TokenType {
 
     COMMA,       /*!< Comma. */
 
+    /* TODO: See below; erroneous for the same reason strings are. */
     SQUOTE,      /*!< Single-quote. */
     DQUOTE,      /*!< Double-quote. */
 
@@ -80,6 +82,7 @@ bool is_del(char initial) {
  */
 TokenType next_token() {
     char ch;
+    bool keep_going;
 
     /* Consume whitespace and comments. */
     while (1) {
@@ -114,7 +117,62 @@ TokenType next_token() {
     if (is_del(ch)) {
         curr_token.type = DEL;
     } else {
-        curr_token.type = OTHER;
+        /* TODO: replace this with a lookup table */
+        keep_going = false;
+        switch (ch) {
+            case ')':
+                curr_token.type = RPAREN;
+                break;
+            case '(':
+                curr_token.type = LPAREN;
+                break;
+            case ']':
+                curr_token.type = RBRACKET;
+                break;
+            case '[':
+                curr_token.type = LBRACKET;
+                break;
+            case '}':
+                curr_token.type = RBRACE;
+                break;
+            case '{':
+                curr_token.type = LBRACE;
+                break;
+            case ':':
+                curr_token.type = COLON;
+                break;
+            case '+':
+                curr_token.type = PLUS;
+                break;
+            case '-':
+                curr_token.type = MINUS;
+                break;
+            case '*':
+                curr_token.type = ASTERISK;
+                break;
+            case '/':
+                curr_token.type = SLASH;
+                break;
+            case '.':
+                curr_token.type = DOT;
+                break;
+            case ',':
+                curr_token.type = COMMA;
+                break;
+            case '\'':
+                curr_token.type = SQUOTE;
+                break;
+            case '\"':
+                curr_token.type = DQUOTE;
+                break;
+            default:
+                keep_going = true;
+                break;
+        }
+
+        if (keep_going) {
+            /* Need to read a string of some kind. */
+        }
     }
 
 Done:
