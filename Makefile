@@ -1,4 +1,4 @@
-OBJS=repl.o parse.o
+OBJS=repl.o parse.o alloc.o
 
 CFLAGS=-Wall -g -O0
 LDFLAGS=-lm

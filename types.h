@@ -189,9 +189,8 @@ typedef struct Enclosure {
     EnclosureType type;
 
     union {
-        Expression **parenth_form;
         Expression **list;
-        Dictionary dict;
+        Dictionary *dict;
     };
 
     /*!
@@ -290,8 +289,8 @@ typedef struct Target {
     TargetType type;
     union {
         char *identifier;
-        AttributeReference attributeref;
-        Subscription subscription;
+        AttributeReference *attributeref;
+        Subscription *subscription;
     };
 } Target;
 

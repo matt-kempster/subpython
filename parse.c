@@ -2,7 +2,10 @@
 #include <ctype.h>
 #include <malloc.h>
 #include <stdbool.h>
+#include <stdlib.h>
+#include <string.h>
 
+#include "alloc.h"
 #include "parse.h"
 #include "types.h"
 
@@ -36,6 +39,7 @@ typedef enum TokenType {
     SQUOTE,      /*!< Single-quote. */
     DQUOTE,      /*!< Double-quote. */
 
+    /* TODO: These two are erroneous. Will fix when writing tokenizer. */
     INTEGER,     /*!< An integer of some sort. Contains at least 1 digit. */
     STRING,      /*!< A string of some sort. Consists of a-z, A-Z, _, 0-9. */
 
@@ -117,6 +121,11 @@ Done:
     return curr_token.type;
 }
 
+/* New section! */
+Expression *read_expression();
+Primary *read_primary();
+Target *read_target();
+
 bool accept(TokenType t) {
     if (curr_token.type == t) {
         next_token();
@@ -135,23 +144,26 @@ Literal *read_literal() {
 
     if (accept(INTEGER)) {
         value = atoi(curr_token.string);
-        return make_literal(T_Int, value);
+        /* Sadly, we here cast an integer to a (void *)... */
+        return make_literal(T_Int, (void *) value);
     }
 
     if (accept(SQUOTE)) {
         if (accept(STRING)) {
-            string = curr_token.string;
+            strcpy(string, curr_token.string);
             if (accept(SQUOTE)) {
                 return make_literal(T_String, string);
             } else {
-                string = NULL;
+                free(string);
             }
         }
     } else if (accept(DQUOTE)) {
         if (accept(STRING)) {
-            string = curr_token.string;
+            strcpy(string, curr_token.string);
             if (accept(DQUOTE)) {
                 return make_literal(T_String, string);
+            } else {
+                free(string);
             }
         }
     }
@@ -225,11 +237,11 @@ UnaryExpression *read_unary_expr() {
         ;
     }
 
-    primary = read_primary()
+    primary = read_primary();
     if (primary == NULL) {
         return NULL;
     } else {
-        return make_unary_expr(is_negated, primary);
+        return make_unary_expr(primary, is_negated);
     }
 }
 
@@ -364,7 +376,7 @@ Expression **read_expression_list(int *length) {
              * space in the list, but right now I don't care.
              */
             if (i >= max_list_length) {
-                fprintf(stderr, "LengthError: too many expressions " +
+                fprintf(stderr, "LengthError: too many expressions "
                     "in expression list");
                 goto free_expressions;
             }
@@ -421,15 +433,17 @@ Atom *read_atom() {
     Literal *literal;
     Enclosure *enclosure;
 
-    literal = read_literal()
+    literal = read_literal();
     if (literal != NULL) {
         return make_atom(T_Literal, literal);
     }
 
-    enclosure = read_enclosure()
+    enclosure = read_enclosure();
     if (enclosure != NULL) {
         return make_atom(T_Enclosure, enclosure);
     }
+
+    return NULL;
 }
 
 Primary *read_primary() {
@@ -449,6 +463,26 @@ Primary *read_primary() {
     return NULL;
 }
 
+char *read_identifier() {
+    int i;
+
+    if (accept(STRING)) {
+        /* Make sure the string is actually an identifier. */
+        if (isdigit(curr_token.string[0])) {
+            return NULL;
+        } else {
+            for (i = 0; curr_token.string[i] != '\0'; i++) {
+                if (!isalnum(curr_token.string[i]) &&
+                    curr_token.string[i] != '_') {
+                    return NULL;
+                }
+            }
+            return strdup(curr_token.string);
+        }
+    }
+    return NULL;
+}
+
 AttributeReference *read_attributeref() {
     Primary *primary;
     char *identifier;
@@ -462,6 +496,7 @@ AttributeReference *read_attributeref() {
     }
     identifier = read_identifier();
     if (identifier == NULL) {
+        free(primary);
         return NULL;
     }
 
@@ -487,7 +522,6 @@ Subscription *read_subscription() {
 }
 
 Target *read_target() {
-    Target *target;
     AttributeReference *attributeref;
     Subscription *subscription;
     char *identifier;
@@ -600,7 +634,7 @@ free_list:
  *
  */
 Statement *read_statement() {
-    Statement *stmt;
+    Statement *stmt = NULL;
     int length;
     Target **target_list;
 
@@ -622,33 +656,7 @@ Statement *read_statement() {
         }
     }
 
-#if 0
-    while (!done) {
-        next_token();
-
-        switch (curr_token.type) {
-
-        case STREAM_END:
-            /* Just return the statement. */
-            done = true;
-            break;
-
-        case DEL:
-            /* Deletion operator... these would obv. be in make_del() */
-            stmt->type = T_DelStatement;
-            stmt->del_stmt = (DelStatement *) malloc(sizeof(DelStatement));
-            stmt->del_stmt->target_list = NULL;
-            stmt->del_stmt->length = 0;
-            break;
-
-        case OTHER:
-            /* TODO */
-        default:
-            /* TODO */
-            break;
-        }
-    }
-#endif
+    /* TODO: every other type of statement... */
 
     return stmt;
 }
