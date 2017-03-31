@@ -372,7 +372,7 @@ typedef struct DelStatement {
  * statement, an augmented assignment statement, or a "del" statement.
  */
 typedef enum StatementType {
-    T_ExpressionStatement
+    T_ExpressionStatement,
     T_AssignmentStatement,
     T_AugmentedAssignment,
     T_DelStatement
