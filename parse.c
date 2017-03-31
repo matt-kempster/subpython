@@ -40,6 +40,7 @@ typedef enum TokenType {
     STRING,      /*!< A string of some sort. Consists of a-z, A-Z, -, _, 0-9. */
 
     ERROR,       /*!< Ran into a parsing error.  */
+    OTHER,       /*!< Placeholder to make things compile. */
 } TokenType;
 
 /*! Maximum length of a single token. */
