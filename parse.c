@@ -235,6 +235,13 @@ Done:
 }
 
 /* New section! */
+
+/*!
+ * A constant for how many times a function can recursively call itself or
+ * any function that (ultimately) called it.
+ */
+#define MAX_RECURSION 16
+
 Expression *read_expression();
 Primary *read_primary();
 Target *read_target();
@@ -343,77 +350,84 @@ UnaryExpression *read_unary_expr() {
     }
 }
 
-MultiplicativeExpression *read_multiplicative_expr() {
+MultiplicativeExpression *read_multiplicative_expr(int calls) {
     MultiplicativeExpression *left;
     MultiplicativeOperation op;
     UnaryExpression *right;
 
-    left = read_multiplicative_expr();
-    if (left == NULL) {
-        op = T_Identity;
-
-        right = read_unary_expr();
-        if (right == NULL) {
-            return NULL;
-        } else {
-            return make_multiplicative_expr(left, op, right);
-        }
-    }
-
-    if (accept(ASTERISK)) {
-        op = T_Multiply;
-    } else if (accept(SLASH)) {
-        op = T_Divide;
-    } else {
-        free(left);
+    if (calls == 0) {
         return NULL;
     }
 
     right = read_unary_expr();
     if (right == NULL) {
-        free(left);
-        return NULL;
-    }
+        left = read_multiplicative_expr(calls - 1);
+        if (left == NULL) {
+            /* Too many recursive calls or malformed expression. */
+            return NULL;
+        } else {
+            if (accept(ASTERISK)) {
+                op = T_Multiply;
+            } else if (accept(SLASH)) {
+                op = T_Divide;
+            } else {
+                free(left);
+                return NULL;
+            }
 
-    return make_multiplicative_expr(left, op, right);
+            right = read_unary_expr();
+            if (right == NULL) {
+                return NULL;
+            } else {
+                return make_multiplicative_expr(left, op, right);
+            }
+        }
+    } else {
+        op = T_Identity;
+        return make_multiplicative_expr(NULL, op, right);
+    }
 }
 
-AdditiveSubexpression *read_additive_expr() {
+AdditiveSubexpression *read_additive_expr(int calls) {
     AdditiveSubexpression *left;
     AdditiveOperation op;
     MultiplicativeExpression *right;
 
-    left = read_additive_expr();
-    if (left == NULL) {
-        op = T_Zero;
-        right = read_multiplicative_expr();
-        if (right == NULL) {
+    if (calls == 0) {
+        return NULL;
+    }
+
+    right = read_multiplicative_expr(MAX_RECURSION);
+    if (right == NULL) {
+        left = read_additive_expr(calls - 1);
+        if (left == NULL) {
+            /* Too many recursive calls or malformed expression. */
             return NULL;
         } else {
-            return make_additive_expr(left, op, right);
+            if (accept(PLUS)) {
+                op = T_Add;
+            } else if (accept(MINUS)) {
+                op = T_Subtract;
+            } else {
+                free(left);
+                return NULL;
+            }
+
+            right = read_multiplicative_expr(MAX_RECURSION);
+            if (right == NULL) {
+                return NULL;
+            } else {
+                return make_additive_expr(left, op, right);
+            }
         }
-    }
-
-    if (accept(PLUS)) {
-        op = T_Add;
-    } else if (accept(MINUS)) {
-        op = T_Subtract;
     } else {
-        free(left);
-        return NULL;
+        op = T_Zero;
+        return make_additive_expr(NULL, op, right);
     }
-
-    right = read_multiplicative_expr();
-    if (right == NULL) {
-        free(left);
-        return NULL;
-    }
-
-    return make_additive_expr(left, op, right);
 }
 
 Expression *read_expression() {
-    AdditiveSubexpression *additive_expr = read_additive_expr();
+    AdditiveSubexpression *additive_expr = read_additive_expr(MAX_RECURSION);
 
     if (additive_expr == NULL) {
         return NULL;
