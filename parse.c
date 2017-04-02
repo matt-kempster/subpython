@@ -7,755 +7,457 @@
 
 #include "alloc.h"
 #include "parse.h"
+#include "lex.h"
 #include "types.h"
 
-/*!
- * An enumeration of the various types of tokens the parser can generate.
- */
-typedef enum TokenType {
-    STREAM_END,  /*!< Hit end of line or EOF while trying to parse. */
+/* A handy macro to delineate an unreachable branch in switches. */
+#define UNREACHABLE() \
+  { fprintf(stderr, "THIS SHOULD BE UNREACHABLE!"); exit(-1); }
 
-    /* TODO: when more keywords added (lambda, ...), replace with KEYWORD */
-    DEL,         /*!< Deletion keyword. */
-
-    RPAREN,      /*!< Right parenthesis. */
-    LPAREN,      /*!< Left parenthesis. */
-
-    LBRACKET,    /*!< Left bracket. */
-    RBRACKET,    /*!< Right bracket. */
-
-    LBRACE,      /*!< Left brace. (This character: { ) */
-    RBRACE,      /*!< Right brace. (This character: } ) */
-    COLON,       /*!< Colon. */
-
-    PLUS,        /*!< Plus. */
-    MINUS,       /*!< Minus.  */
-    ASTERISK,    /*!< Asterisk. */
-    SLASH,       /*!< Forward slash. (This character: / ) */
-
-    DOT,         /*!< Period. */
-
-    COMMA,       /*!< Comma. */
-
-    INTEGER,     /*!< An integer of some sort. Composed of digits 0-9. */
-    STRING,      /*!< A string-literal. Composed of any characters. */
-    IDENT,       /*!< An identifier for a variable. */
-
-    ERROR,       /*!< Ran into a parsing error.  */
-    OTHER,       /*!< Placeholder to make things compile. */
-} TokenType;
-
-/*! Maximum length of a single token. */
-#define MAX_LENGTH 512
-
-typedef struct Token {
-    TokenType type;
-    char string[MAX_LENGTH];
-} Token;
-
-/*! The current token while parsing is occurring. */
+/*! The current token while parsing. */
 static Token curr_token;
 
-bool is_del(char initial) {
-    char ch;
-    int i;
-    const char *del = "el";
-    if (initial == 'd') {
-        for (i = 0; i < 2; i++) {
-            ch = fgetc(stdin);
-            if (ch != del[i]) {
-                return false;
+void read_string();
+void read_int();
+void read_identifier();
+
+/*!
+ * Moves the "token pointer" one token ahead on the current character stream.
+ */
+void bump_token() {
+    // For now, eat all spaces before the token.
+    while (curr_char() == ' ' || curr_char() == '\t') {
+        bump_char();
+    }
+
+    switch (curr_char()) {
+        case '\0':
+        case EOF:
+            bump_char();
+            curr_token.type = STREAM_END;
+
+        case '\n':
+            bump_char();
+            curr_token.type = LINE_END;
+            break;
+
+        case '(':
+            bump_char();
+            curr_token.type = LPAREN;
+            break;
+
+        case ')':
+            bump_char();
+            curr_token.type = RPAREN;
+            break;
+
+        case '[':
+            bump_char();
+            curr_token.type = LBRACKET;
+            break;
+
+        case ']':
+            bump_char();
+            curr_token.type = RBRACKET;
+            break;
+
+        case '{':
+            bump_char();
+            curr_token.type = LBRACE;
+            break;
+
+        case '}':
+            bump_char();
+            curr_token.type = RBRACE;
+            break;
+
+        case ':':
+            bump_char();
+            curr_token.type = COLON;
+            break;
+
+        case '*':
+            bump_char();
+            curr_token.type = ASTERISK;
+            break;
+
+        case '/':
+            bump_char();
+            curr_token.type = SLASH;
+            break;
+
+        case '.':
+            bump_char();
+            curr_token.type = DOT;
+            break;
+
+        case ',':
+            bump_char();
+            curr_token.type = COMMA;
+            break;
+
+        case '+':
+            bump_char();
+            curr_token.type = PLUS;
+            break;
+
+        case '-':
+            bump_char();
+            curr_token.type = MINUS;
+            break;
+
+        case '=':
+            bump_char();
+            curr_token.type = EQUAL;
+            break;
+
+        case '\'':
+        case '\"':
+            read_string();
+            break;
+
+        default: {
+                if (isdigit(curr_char())) {
+                    read_int();
+                } else if (isalpha(curr_char()) || curr_char() == '_') {
+                    read_identifier();
+                }
             }
+            break;
+    }
+}
+
+void read_string() {
+    int string_idx = 0;
+    char start = curr_char();
+    bump_char();
+
+    while (curr_char() != start) {
+        //TODO: easy to add escapes.
+        curr_token.string[string_idx++] = curr_char();
+    }
+
+    bump_char();
+    curr_token.type = STRING;
+}
+
+void read_int() {
+    int string_idx = 0;
+
+    while (isdigit(curr_char())) {
+        //TODO: size limit
+        curr_token.string[string_idx++] = curr_char();
+        bump_char();
+    }
+
+    if (curr_char() == '.' && isalpha(next_char())) {
+        curr_token.string[string_idx++] = '.';
+
+        while (isdigit(curr_char())) {
+            //TODO: size limit
+            curr_token.string[string_idx++] = curr_char();
+            bump_char();
         }
+
+        curr_token.string[string_idx] = '\0';
+        curr_token.float_value = atof(curr_token.string);
+        curr_token.type = FLOAT;
+    } else {
+        curr_token.string[string_idx] = '\0';
+        curr_token.int_value = atoi(curr_token.string);
+        curr_token.type = INTEGER;
+    }
+}
+
+void read_identifier() {
+    int string_idx = 0;
+
+    while (isalnum(curr_char()) || curr_char() == '_') {
+        curr_token.string[string_idx++] = curr_char();
+        bump_char();
+    }
+
+    curr_token.string[string_idx] = '\0';
+
+    if (strcmp(curr_token.string, "del") == 0) {
+        curr_token.type = DEL;
+    } else {
+        curr_token.type = IDENT;
+    }
+}
+
+/*! Bumps the token stream if the current token matches type T,
+    returning whether the token matched. */
+bool try_consume(TokenType t) {
+    if (curr_token.type == t) {
+        bump_token();
+        return true;
     } else {
         return false;
     }
-    return true;
 }
 
-int is_ident_char(int ch) {
-    return (isalnum(ch) || ch == '_');
-}
-
-/*!
- *
- */
-TokenType next_token() {
-    char ch, quote_char;
-    bool keep_going;
-    int i;
-    int (*pred)(int);
-
-    /* Consume whitespace and comments. */
-    while (1) {
-        /* Consume whitespace. */
-        do {
-            ch = fgetc(stdin);
-        } while (ch != EOF && ch != '\r' && ch != '\n' && isspace(ch));
-
-        /* Handle case where we hit end of line or EOF while reading. */
-        if (ch == EOF || ch == '\r' || ch == '\n') {
-            curr_token.type = STREAM_END;
-            goto Done;
-        }
-
-        /* Consume comments. */
-        if (ch == '#') {
-            do {
-                ch = fgetc(stdin);
-            } while (ch != EOF && ch != '\r' && ch != '\n' && isspace(ch));
-
-            /* Handle case where we hit end of line or EOF while reading. */
-            if (ch == EOF || ch == '\r' || ch == '\n') {
-                curr_token.type = STREAM_END;
-                goto Done;
-            }
-        } else {
-            /* Not a comment - actual work to be done. */
-            break;
-        }
+/*! Expects a token, otherwise throws an error. */
+void expect(TokenType t) {
+    if (curr_token.type != t) {
+        //TODO: error
     }
-
-    if (is_del(ch)) {
-        curr_token.type = DEL;
-    } else {
-        /* TODO: replace this with a lookup table */
-        keep_going = false;
-        switch (ch) {
-            case ')':
-                curr_token.type = RPAREN;
-                break;
-            case '(':
-                curr_token.type = LPAREN;
-                break;
-            case ']':
-                curr_token.type = RBRACKET;
-                break;
-            case '[':
-                curr_token.type = LBRACKET;
-                break;
-            case '}':
-                curr_token.type = RBRACE;
-                break;
-            case '{':
-                curr_token.type = LBRACE;
-                break;
-            case ':':
-                curr_token.type = COLON;
-                break;
-            case '+':
-                curr_token.type = PLUS;
-                break;
-            case '-':
-                curr_token.type = MINUS;
-                break;
-            case '*':
-                curr_token.type = ASTERISK;
-                break;
-            case '/':
-                curr_token.type = SLASH;
-                break;
-            case '.':
-                curr_token.type = DOT;
-                break;
-            case ',':
-                curr_token.type = COMMA;
-                break;
-            default:
-                keep_going = true;
-                break;
-        }
-
-        if (keep_going) {
-            /**
-             * Need to read a string of some sort; an integer literal, a string
-             * literal (contained within quotes), or an identifier for a
-             * variable.
-             */
-            if (ch == '\"' || ch == '\'') {
-                /* Quoted string, aka string literal. */
-                curr_token.type = STRING;
-                quote_char = ch;
-
-                for (i = 0; i < MAX_LENGTH; i++) {
-                    ch = fgetc(stdin);
-
-                    if (ch == EOF || ch == '\r' || ch == '\n') {
-                        fprintf(stderr, "Keep strings to one line for now!\n");
-                        curr_token.type = ERROR;
-                    }
-
-                    if (ch == quote_char) {
-                        curr_token.string[i] = '\0';
-                        break;
-                    }
-
-                    curr_token.string[i] = ch;
-                }
-            } else {
-                /**
-                 * Need to read an integer or an ident. Integers are composed
-                 * entirely of digits 0-9, while idents cannot start with
-                 * digits and must be composed entirely of alphanumerics and
-                 * underscores.
-                 */
-                if (isdigit(ch)) {
-                    curr_token.type = INTEGER;
-                    pred = &isdigit;
-                } else if (isalpha(ch) || ch == '_') {
-                    curr_token.type = IDENT;
-                    pred = &is_ident_char;
-                } else {
-                    curr_token.type = ERROR;
-                    goto Done;
-                }
-
-                curr_token.string[0] = ch;
-                for (i = 1; i < MAX_LENGTH; i++) {
-                    ch = fgetc(stdin);
-
-                    if (ch == EOF || ch == '\r' || ch == '\n' || isspace(ch)) {
-                        curr_token.string[i] = '\0';
-                        break;
-                    }
-
-                    if (!pred(ch)) {
-                        curr_token.type = ERROR;
-                        break;
-                    }
-
-                    curr_token.string[i] = ch;
-                }
-            }
-        }
-    }
-
-Done:
-    return curr_token.type;
 }
 
-/* New section! */
+/*! Expects a token, bumping if it was found, otherwise throws an
+    error. */
+void expect_consume(TokenType t) {
+    expect(t);
+    bump_token();
+}
 
-/*!
- * A constant for how many times a function can recursively call itself or
- * any function that (ultimately) called it.
- */
-#define MAX_RECURSION 16
+///////////////////// PARSING /////////////////////
+
+Statement *read_statement();
 
 Expression *read_expression();
-Primary *read_primary();
-Target *read_target();
+Expression *read_literal();
+Expression *read_paren_expression();
+Expression *read_list_literal();
+Expression *read_dict_literal();
+bool is_lval(Expression *);
+bool is_stmt(Expression *);
 
-bool accept(TokenType t) {
-    if (curr_token.type == t) {
-        next_token();
-        return true;
-    }
-    return false;
+int get_precedence(TokenType);
+bool is_operator(TokenType);
+bool is_right_assoc(TokenType);
+ExpressionType expression_type(TokenType);
+
+/*! Serves as the entrypoint into the parser, taking ownership of
+    the string. */
+Statement *read(char *string) {
+    init_lex(string);
+    bump_token();
+    return read_statement();
 }
 
-bool expect(TokenType t) {
-    return accept(t);
-}
-
-Literal *read_literal() {
-    int value;
-    char *string = NULL;
-
-    if (accept(INTEGER)) {
-        value = atoi(curr_token.string);
-        /* Sadly, we here cast an integer to a (void *)... */
-        return make_literal(T_Int, (void *) value);
-    }
-
-    if (accept(STRING)) {
-        string = strdup(curr_token.string);
-        return make_literal(T_String, (void *) string);
-    }
-
-    return NULL;
-}
-
-Dictionary *read_dictionary(int *length) {
-    Expression **keys = NULL;
-    Expression **values = NULL;
-    Expression *curr_key;
-    Expression *curr_value;
-    int max_length = 128;
-    int i = 0;
-    int j;
-
-    if (!expect(LBRACE)) {
-        return NULL;
-    }
-
-    keys = (Expression **) malloc(max_length * sizeof(Expression *));
-    values = (Expression **) malloc(max_length * sizeof(Expression *));
-
-    while (!accept(RBRACE)) {
-        curr_key = read_expression();
-
-        if (curr_key == NULL) {
-            goto free_all;
-        }
-
-        if (!expect(COLON)) {
-            free(curr_key);
-            goto free_all;
-        }
-
-        curr_value = read_expression();
-
-        if (curr_value == NULL) {
-            free(curr_key);
-            goto free_all;
-        } else {
-            keys[i] = curr_key;
-            values[i] = curr_value;
-            i += 1;
-        }
-    }
-
-    *length = i;
-    return make_dictionary(keys, values, *length);
-
-free_all:
-    for (j = 0; j < i; j++) {
-        free(keys[j]);
-        free(values[j]);
-    }
-    free(keys);
-    free(values);
-
-    return NULL;
-}
-
-UnaryExpression *read_unary_expr() {
-    bool is_negated = false;
-    Primary *primary;
-
-    if (accept(MINUS)) {
-        is_negated = true;
-    }
-
-    if (accept(PLUS)) {
-        ;
-    }
-
-    primary = read_primary();
-    if (primary == NULL) {
-        return NULL;
-    } else {
-        return make_unary_expr(primary, is_negated);
-    }
-}
-
-MultiplicativeExpression *read_multiplicative_expr(int calls) {
-    MultiplicativeExpression *left;
-    MultiplicativeOperation op;
-    UnaryExpression *right;
-
-    if (calls == 0) {
-        return NULL;
-    }
-
-    right = read_unary_expr();
-    if (right == NULL) {
-        left = read_multiplicative_expr(calls - 1);
-        if (left == NULL) {
-            /* Too many recursive calls or malformed expression. */
-            return NULL;
-        } else {
-            if (accept(ASTERISK)) {
-                op = T_Multiply;
-            } else if (accept(SLASH)) {
-                op = T_Divide;
-            } else {
-                free(left);
-                return NULL;
-            }
-
-            right = read_unary_expr();
-            if (right == NULL) {
-                return NULL;
-            } else {
-                return make_multiplicative_expr(left, op, right);
-            }
-        }
-    } else {
-        op = T_Identity;
-        return make_multiplicative_expr(NULL, op, right);
-    }
-}
-
-AdditiveSubexpression *read_additive_expr(int calls) {
-    AdditiveSubexpression *left;
-    AdditiveOperation op;
-    MultiplicativeExpression *right;
-
-    if (calls == 0) {
-        return NULL;
-    }
-
-    right = read_multiplicative_expr(MAX_RECURSION);
-    if (right == NULL) {
-        left = read_additive_expr(calls - 1);
-        if (left == NULL) {
-            /* Too many recursive calls or malformed expression. */
-            return NULL;
-        } else {
-            if (accept(PLUS)) {
-                op = T_Add;
-            } else if (accept(MINUS)) {
-                op = T_Subtract;
-            } else {
-                free(left);
-                return NULL;
-            }
-
-            right = read_multiplicative_expr(MAX_RECURSION);
-            if (right == NULL) {
-                return NULL;
-            } else {
-                return make_additive_expr(left, op, right);
-            }
-        }
-    } else {
-        op = T_Zero;
-        return make_additive_expr(NULL, op, right);
-    }
-}
-
-Expression *read_expression() {
-    AdditiveSubexpression *additive_expr = read_additive_expr(MAX_RECURSION);
-
-    if (additive_expr == NULL) {
-        return NULL;
-    }
-    return make_expression(additive_expr);
-}
-
-/**
- * TODO: (Very high priority!) I just copy/pasted this from read_target_list
- * and that's a bad thing. Fix that.
- */
-Expression **read_expression_list(int *length) {
-    int max_list_length = 128;
-    Expression *expression;
-    Expression **expression_list =
-        (Expression **) malloc(max_list_length * sizeof(Expression *));
-    int i = 0;
-    bool trailing_comma = false;
-    int j;
-
-    /* Any good expression list has to have at least one expression! */
-    expression = read_expression();
-    if (expression == NULL) {
-        /* This was an invalid expression. Don't leak memory. */
-        goto free_list;
-    } else {
-        /* Okay, so far so good - we have a first expression. */
-        expression_list[i] = expression;
-        i += 1;
-    }
-
-    /* Every expression from now on has a preceding comma. */
-    while (accept(COMMA)) {
-        /* Try to read a expression... */
-        expression = read_expression();
-        if (expression == NULL) {
-            /**
-             * No expression was read, but a comma was. This means that the
-             * previous expression should be the last one, and the comma is a
-             * trailing comma. However, if the last comma was supposed to
-             * be a trailing comma, that's not good, so we should exit.
-             */
-            if (trailing_comma) {
-                /* Can't have two trailing commas in a row. */
-                fprintf(stderr, "SyntaxError: while reading expression list");
-                goto free_expressions;
-            } else {
-                /* Hopefully this is the end of input. */
-                trailing_comma = true;
-            }
-        } else {
-            /* We read a expression - put it into the list and move on. */
-            expression_list[i] = expression;
-            i += 1;
-
-            /**
-             * TODO: If i is too big, we should use realloc to make more
-             * space in the list, but right now I don't care.
-             */
-            if (i >= max_list_length) {
-                fprintf(stderr, "LengthError: too many expressions "
-                    "in expression list");
-                goto free_expressions;
-            }
-        }
-    }
-
-    /* Everything worked! Don't forget to give back the length. */
-    *length = i;
-    return expression_list;
-
-free_expressions:
-    /* Need to free every expression we came up with. */
-    for (j = 0; j < i; j++) {
-        free(expression_list[j]);
-    }
-
-free_list:
-    /* Now, get rid of the list and call it a failed day. */
-    free(expression_list);
-    return NULL;
-
-}
-
-Enclosure *read_enclosure() {
-    Dictionary *dictionary;
-    Expression **expression_list;
-    int length;
-
-    dictionary = read_dictionary(&length);
-    if (dictionary != NULL) {
-        return make_enclosure(T_Dict, dictionary, length);
-    }
-
-    if (accept(LPAREN)) {
-        expression_list = read_expression_list(&length);
-        if (expression_list != NULL && accept(RPAREN)) {
-            return make_enclosure(T_ParentheticalForm, expression_list, length);
-        } else if (expression_list != NULL) {
-            /* free */
-        }
-    } else if (accept(LBRACKET)) {
-        expression_list = read_expression_list(&length);
-        if (expression_list != NULL && accept(RBRACKET)) {
-            return make_enclosure(T_List, expression_list, length);
-        } else if (expression_list != NULL) {
-            /* free */
-        }
-    }
-
-    return NULL;
-}
-
-Atom *read_atom() {
-    Literal *literal;
-    Enclosure *enclosure;
-
-    literal = read_literal();
-    if (literal != NULL) {
-        return make_atom(T_Literal, literal);
-    }
-
-    enclosure = read_enclosure();
-    if (enclosure != NULL) {
-        return make_atom(T_Enclosure, enclosure);
-    }
-
-    return NULL;
-}
-
-Primary *read_primary() {
-    Atom *atom;
-    Target *target;
-
-    atom = read_atom();
-    if (atom != NULL) {
-        return make_primary(true, atom);
-    }
-
-    target = read_target();
-    if (target != NULL) {
-        return make_primary(false, target);
-    }
-
-    return NULL;
-}
-
-char *read_identifier() {
-    if (accept(IDENT)) {
-        return strdup(curr_token.string);
-    }
-    return NULL;
-}
-
-AttributeReference *read_attributeref() {
-    Primary *primary;
-    char *identifier;
-
-    primary = read_primary();
-    if (primary == NULL) {
-        return NULL;
-    }
-    if (!expect(DOT)) {
-        return NULL;
-    }
-    identifier = read_identifier();
-    if (identifier == NULL) {
-        free(primary);
-        return NULL;
-    }
-
-    return make_attributeref(primary, identifier);
-}
-
-Subscription *read_subscription() {
-    Primary *primary;
-    Expression **expression_list;
-    int length;
-
-    primary = read_primary();
-    if (primary == NULL) {
-        return NULL;
-    }
-
-    expression_list = read_expression_list(&length);
-    if (expression_list == NULL) {
-        return NULL;
-    }
-
-    return make_subscription(primary, expression_list, length);
-}
-
-Target *read_target() {
-    AttributeReference *attributeref;
-    Subscription *subscription;
-    char *identifier;
-
-    attributeref = read_attributeref();
-    if (attributeref != NULL) {
-        return make_target(T_AttributeReference, attributeref);
-    }
-
-    subscription = read_subscription();
-    if (subscription != NULL) {
-        return make_target(T_Subscription, subscription);
-    }
-
-    identifier = read_identifier();
-    if (identifier != NULL) {
-        return make_target(T_Identifier, identifier);
-    } else {
-        return NULL;
-    }
-}
-
-/*!
- * Try to read a list of targets (a "target list"). A target list has this form:
- *     TARGET ("," TARGET)* [","]
- * The input parameter length must be a pointer to an integer. On successfully
- * reading a target list, this function will properly set that pointer to the
- * length of the list, and will return a pointer to that list. Otherwise, return
- * NULL.
- */
-Target **read_target_list(int *length) {
-    int max_list_length = 128;
-    Target *target;
-    Target **target_list =
-        (Target **) malloc(max_list_length * sizeof(Target *));
-    int i = 0;
-    bool trailing_comma = false;
-    int j;
-
-    /* Any good target list has to have at least one target! */
-    target = read_target();
-    if (target == NULL) {
-        /* This was an invalid target. Don't leak memory. */
-        goto free_list;
-    } else {
-        /* Okay, so far so good - we have a first target. */
-        target_list[i] = target;
-        i += 1;
-    }
-
-    /* Every target from now on has a preceding comma. */
-    while (accept(COMMA)) {
-        /* Try to read a target... */
-        target = read_target();
-        if (target == NULL) {
-            /**
-             * No target was read, but a comma was. This means that the
-             * previous target should be the last one, and the comma is a
-             * trailing comma. However, if the last comma was supposed to
-             * be a trailing comma, that's not good, so we should exit.
-             */
-            if (trailing_comma) {
-                /* Can't have two trailing commas in a row. */
-                fprintf(stderr, "SyntaxError: while reading target list");
-                goto free_targets;
-            } else {
-                /* Hopefully this is the end of input. */
-                trailing_comma = true;
-            }
-        } else {
-            /* We read a target - put it into the list and move on. */
-            target_list[i] = target;
-            i += 1;
-
-            /**
-             * TODO: If i is too big, we should use realloc to make more
-             * space in the list, but right now I don't care.
-             */
-            if (i >= max_list_length) {
-                fprintf(stderr, "LengthError: too many targets in target list");
-                goto free_targets;
-            }
-        }
-    }
-
-    /* After we're done reading commas and targets, we should be done. */
-    if (!accept(STREAM_END)) {
-        /* There's more to read, but there shouldn't be! */
-        goto free_targets;
-    }
-
-    /* Everything worked! Don't forget to give back the length. */
-    *length = i;
-    return target_list;
-
-free_targets:
-    /* Need to free every target we came up with. */
-    for (j = 0; j < i; j++) {
-        free(target_list[j]);
-    }
-
-free_list:
-    /* Now, get rid of the list and call it a failed day. */
-    free(target_list);
-    return NULL;
-
-}
-
-/*!
- *
- */
 Statement *read_statement() {
-    Statement *stmt = NULL;
-    int length;
-    Target **target_list;
+    Statement *stmt;
 
-    next_token();
+    if (try_consume(LINE_END)) {
+        return NULL;
+    } else if (try_consume(DEL)) {
+        Expression *expr = read_expression(PRECEDENCE_LOWEST);
 
-    if (accept(DEL)) {
-        /**
-         * This statement will be a deletion statement; these have the form
-         * "del TARGET_LIST".
-         */
-        target_list = read_target_list(&length);
-        if (target_list == NULL) {
-            return NULL;
-        } else {
-            stmt = (Statement *) malloc(sizeof(Statement));
-            stmt->type = T_DelStatement;
-            stmt->del_stmt = make_del_statement(target_list, length);
-            return stmt;
+        if (!is_lval(expr)) {
+            //TODO: error
         }
-    }
 
-    /* TODO: every other type of statement... */
+        stmt = make_statement_del(expr);
+        expect_consume(LINE_END);
+    } else {
+        // We need to parse an expression statement.
+        Expression *expr = read_expression(PRECEDENCE_LOWEST);
+
+        if (!is_stmt(expr)) {
+            //TODO: error
+        }
+
+        stmt = make_statement_expr(expr);
+        expect_consume(LINE_END);
+    }
 
     return stmt;
+}
+
+Expression *read_expression(int precedence) {
+    Expression *lhs = read_literal();
+
+    while (is_operator(curr_token.type)) {
+        if (try_consume(LBRACKET)) {
+            Expression *subscript = read_expression(PRECEDENCE_LOWEST);
+            expect_consume(RBRACKET);
+            lhs = make_expression_subscription(lhs, subscript);
+        } else {
+            int new_precedence = get_precedence(curr_token.type);
+            if (new_precedence < precedence) {
+                break;
+            }
+
+            TokenType op_type = curr_token.type;
+            bump_token();
+
+            if (is_right_assoc(op_type)) {
+                Expression *rhs = read_expression(new_precedence);
+                lhs = make_expression_binary(expression_type(op_type), lhs, rhs);
+            } else {
+                Expression *rhs = read_expression(new_precedence + 1);
+                lhs = make_expression_binary(expression_type(op_type), lhs, rhs);
+            }
+        }
+    }
+
+    return lhs;
+}
+
+Expression *read_literal() {
+    switch (curr_token.type) {
+        case MINUS:
+            bump_token();
+            Expression *expr = read_expression(PRECEDENCE_UNARY_NEG);
+            return make_expression_negative(expr);
+
+        case PLUS:
+            bump_token();
+            return read_expression(PRECEDENCE_UNARY_NEG);
+
+        case LPAREN:
+            return read_paren_expression();
+
+        case LBRACKET:
+            return read_list_literal();
+
+        case LBRACE:
+            return read_dict_literal();
+
+        case IDENT:
+            expr = make_expression_ident(curr_token.string);
+            bump_token();
+            return expr;
+
+        case INTEGER:
+            expr = make_expression_integer(curr_token.int_value);
+            bump_token();
+            return expr;
+
+        case FLOAT:
+            expr = make_expression_float(curr_token.float_value);
+            bump_token();
+            return expr;
+
+        case STRING:
+            expr = make_expression_string(curr_token.string);
+            bump_token();
+            return expr;
+
+        default:
+            {}
+
+            //TODO: error
+    }
+}
+
+Expression *read_paren_expression() {
+    expect_consume(LPAREN);
+    Expression *expr = read_expression(PRECEDENCE_LOWEST);
+    expect_consume(RPAREN);
+    //TODO: this can be easily extended to tuples.
+    return expr;
+}
+
+Expression *read_list_literal() {
+    bool first = true;
+    //TODO: explain why it's TOTALLY OKAY to reverse the list here!
+    ListNode *list = NULL;
+    expect_consume(LBRACKET);
+
+    while (!try_consume(RBRACKET)) {
+        if (first) {
+            first = false;
+        } else {
+            expect_consume(COMMA);
+        }
+
+        Expression *expr = read_expression(PRECEDENCE_LOWEST);
+        list = make_list(list, expr);
+    }
+
+    return make_expression_list(list);
+}
+
+Expression *read_dict_literal() {
+    bool first = true;
+    //TODO: explain why it's TOTALLY OKAY to reverse the dict here!
+    DictNode *dict = NULL;
+    expect_consume(LBRACE);
+
+    while (!try_consume(RBRACE)) {
+        if (first) {
+            first = false;
+        } else {
+            expect_consume(COMMA);
+        }
+
+        Expression *key = read_expression(PRECEDENCE_LOWEST);
+        expect_consume(COLON);
+        Expression *value = read_expression(PRECEDENCE_LOWEST);
+        dict = make_dict(dict, key, value);
+    }
+
+    return make_expression_dict(dict);
+}
+
+bool is_lval(Expression *expr) {
+    return expr->type == EXPR_SUBSCRIPT || expr->type == EXPR_IDENT;
+}
+bool is_stmt(Expression *expr) {
+    return expr->type == EXPR_ASSIGN;
+}
+
+int get_precedence(TokenType t) {
+    switch (t) {
+        case ASTERISK:
+        case SLASH:
+            return PRECEDENCE_MULT;
+
+        case PLUS:
+        case MINUS:
+            return PRECEDENCE_PLUS;
+
+        case EQUAL:
+            return PRECEDENCE_ASSIGN;
+
+        default:
+            UNREACHABLE();
+    }
+}
+
+bool is_operator(TokenType t) {
+    switch (t) {
+        case LPAREN:
+        case LBRACKET:
+        case PLUS:
+        case MINUS:
+        case ASTERISK:
+        case EQUAL:
+        case SLASH:
+            return true;
+
+        default:
+            return false;
+    }
+}
+
+ExpressionType expression_type(TokenType t) {
+    switch (t) {
+        case LBRACKET:
+            return EXPR_SUBSCRIPT;
+
+        case PLUS:
+            return EXPR_ADD;
+
+        case MINUS:
+            return EXPR_SUB;
+
+        case ASTERISK:
+            return EXPR_MULT;
+
+        case EQUAL:
+            return EXPR_ASSIGN;
+
+        case SLASH:
+            return EXPR_DIV;
+
+        default:
+            UNREACHABLE();
+    }
+}
+
+bool is_right_assoc(TokenType t) {
+    return t == EQUAL;
 }

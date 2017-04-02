@@ -1,6 +1,6 @@
-OBJS=repl.o parse.o alloc.o
+OBJS=repl.o lex.o parse.o alloc.o print.o
 
-CFLAGS=-Wall -g -O0
+CFLAGS=-Wall -g -O0 -pedantic -Wextra
 LDFLAGS=-lm
 
 all: subpython
