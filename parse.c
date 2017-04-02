@@ -150,7 +150,8 @@ void read_int() {
         bump_char();
     }
 
-    if (curr_char() == '.' && isalpha(next_char())) {
+    if (curr_char() == '.' && isdigit(next_char())) {
+        bump_char();
         curr_token.string[string_idx++] = '.';
 
         while (isdigit(curr_char())) {
