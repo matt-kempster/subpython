@@ -1,7 +1,16 @@
 #ifndef ALLOC_H
 #define ALLOC_H
 
+#include <setjmp.h>
+
 #include "types.h"
+
+void free_all();
+char *string_dup(const char *str);
+
+//TODO: where do I put this???
+void error(int pos, const char *fmt, ...);
+extern sigjmp_buf error_jmp;
 
 Statement *make_statement_del(Expression *);
 Statement *make_statement_expr(Expression *);

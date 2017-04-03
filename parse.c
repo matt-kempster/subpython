@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <ctype.h>
 #include <malloc.h>
+#include <stdarg.h>
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
@@ -29,6 +30,8 @@ void bump_token() {
     while (curr_char() == ' ' || curr_char() == '\t') {
         bump_char();
     }
+
+    curr_token.pos = curr_pos();
 
     switch (curr_char()) {
         case '\0':
@@ -121,6 +124,8 @@ void bump_token() {
                     read_int();
                 } else if (isalpha(curr_char()) || curr_char() == '_') {
                     read_identifier();
+                } else {
+                    error(curr_pos(), "Unknown token");
                 }
             }
             break;
@@ -201,7 +206,8 @@ bool try_consume(TokenType t) {
 /*! Expects a token, otherwise throws an error. */
 void expect(TokenType t) {
     if (curr_token.type != t) {
-        //TODO: error
+        //TODO: make this actual strings...
+        error(curr_token.pos, "Expected token %d, got %d.", t, curr_token.type);
     }
 }
 
@@ -243,20 +249,22 @@ Statement *read_statement() {
     if (try_consume(LINE_END)) {
         return NULL;
     } else if (try_consume(DEL)) {
+        int expr_pos = curr_token.pos;
         Expression *expr = read_expression(PRECEDENCE_LOWEST);
 
         if (!is_lval(expr)) {
-            //TODO: error
+            error(expr_pos, "Expected lval expression for `del`.");
         }
 
         stmt = make_statement_del(expr);
         expect_consume(LINE_END);
     } else {
+        int expr_pos = curr_token.pos;
         // We need to parse an expression statement.
         Expression *expr = read_expression(PRECEDENCE_LOWEST);
 
         if (!is_stmt(expr)) {
-            //TODO: error
+            error(expr_pos, "Expected expression-statement.");
         }
 
         stmt = make_statement_expr(expr);
@@ -276,6 +284,7 @@ Expression *read_expression(int precedence) {
             lhs = make_expression_subscription(lhs, subscript);
         } else {
             int new_precedence = get_precedence(curr_token.type);
+
             if (new_precedence < precedence) {
                 break;
             }
@@ -337,9 +346,8 @@ Expression *read_literal() {
             return expr;
 
         default:
-            {}
-
-            //TODO: error
+            error(curr_token.pos, "Unexpected token while reading expression literal.");
+            return NULL;
     }
 }
 

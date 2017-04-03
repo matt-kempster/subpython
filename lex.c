@@ -20,6 +20,14 @@ void init_lex(char *new_string) {
     bump_char();
 }
 
+const char *curr_string() {
+    return current_string;
+}
+
+int curr_pos() {
+    return idx - 2;
+}
+
 char curr_char() {
     return current;
 }

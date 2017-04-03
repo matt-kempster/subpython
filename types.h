@@ -48,6 +48,7 @@ typedef enum TokenType {
 
 typedef struct Token {
     TokenType type;
+    int pos;
     char string[MAX_LENGTH];
     int int_value;
     float float_value;
