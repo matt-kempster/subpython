@@ -6,30 +6,47 @@
 #include <assert.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include <malloc.h>
 
+#include "lex.h"
 #include "parse.h"
 #include "types.h"
+#include "print.h"
+#include "alloc.h"
 
 void read_eval_print_loop() {
-    Statement *stmt;
+    char *line;
+    size_t size;
 
     while (true) {
-        fprintf(stdout, "> ");
+        printf("> ");
+        line = NULL;
+        size = 0;
 
-        stmt = read_statement();
-
-        if (stmt->type == T_DelStatement) {
-            fprintf(stdout, "[deletion statement]\n");
-        } else {
-            fprintf(stdout, "[not deletion]\n");
+        if (getline(&line, &size, stdin) == -1) {
+            // Probably end of file?
+            // Hard to check.
+            free(line);
+            break;
         }
+
+        printf("Begin parse.\n");
+
+        if (setjmp(error_jmp)) {
+            free(line);
+            free_all();
+            continue;
+        }
+
+        Statement *stmt = read(line);
+        free(line);
+        printf("Read statement.\n");
+        print_statement(stmt);
+        free_all();
     }
-
-
 }
 
 int main() {
     read_eval_print_loop();
-
     return 0;
 }
