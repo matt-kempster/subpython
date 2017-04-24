@@ -8,11 +8,9 @@
 #include <stdio.h>
 #include <malloc.h>
 
-#include "lex.h"
+#include "global.h"
 #include "parse.h"
-#include "types.h"
-#include "print.h"
-#include "alloc.h"
+#include "eval.h"
 
 void read_eval_print_loop() {
     char *line;
@@ -33,16 +31,20 @@ void read_eval_print_loop() {
         printf("Begin parse.\n");
 
         if (setjmp(error_jmp)) {
-            free(line);
-            free_all();
-            continue;
+            goto free_loop;
         }
 
-        Statement *stmt = read(line);
+        ParseStatement *stmt = read(line);
+
+        if (stmt == NULL) {
+            goto free_loop;
+        }
+
+        eval_stmt(stmt);
+
+free_loop:
         free(line);
-        printf("Read statement.\n");
-        print_statement(stmt);
-        free_all();
+        parse_free_all();
     }
 }
 

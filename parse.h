@@ -1,7 +1,7 @@
 #ifndef PARSE_H
 #define PARSE_H
 
-#include "types.h"
+#include "global.h"
 
 enum Precedence {
     PRECEDENCE_UNARY_NEG = 4,
@@ -11,6 +11,9 @@ enum Precedence {
     PRECEDENCE_LOWEST = 0
 };
 
-Statement *read(char *string);
+ParseStatement *read(char *string);
+
+// For `error()`.
+const char *curr_string();
 
 #endif /* PARSE_H */

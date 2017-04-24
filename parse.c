@@ -6,20 +6,60 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "alloc.h"
+#include "global.h"
 #include "parse.h"
-#include "lex.h"
-#include "types.h"
 
-/* A handy macro to delineate an unreachable branch in switches. */
-#define UNREACHABLE() \
-  { fprintf(stderr, "THIS SHOULD BE UNREACHABLE!"); exit(-1); }
+///////////////////// LEXING /////////////////////
+
+//TODO: do we want a max line size and a statically allocated buffer, or a
+// manually allocated buffer, and an infinite line size? hmmm...
+static char *current_string = NULL;
+static int idx;
+static char current, next;
+
+const char *curr_string() {
+    return current_string;
+}
+
+int curr_pos() {
+    return idx - 2;
+}
+
+char curr_char() {
+    return current;
+}
+
+char next_char() {
+    return next;
+}
+
+void bump_char() {
+    if (next == '\0') {
+        current = '\0';
+    } else {
+        current = next;
+        next = current_string[idx++];
+    }
+}
+
+void init_lex(char *new_string) {
+    current_string = new_string;
+    idx = 0;
+    // We need to make sure that the char stream is now buffered.
+    // Give the current current, next some dummy values.
+    current = next = '_';
+    // Then bump twice so the first char of new_string sits on current.
+    bump_char();
+    bump_char();
+}
+
+///////////////////// TOKENIZING /////////////////////
 
 /*! The current token while parsing. */
 static Token curr_token;
 
 void read_string();
-void read_int();
+void read_float();
 void read_identifier();
 
 /*!
@@ -121,7 +161,7 @@ void bump_token() {
 
         default: {
                 if (isdigit(curr_char())) {
-                    read_int();
+                    read_float();
                 } else if (isalpha(curr_char()) || curr_char() == '_') {
                     read_identifier();
                 } else {
@@ -146,7 +186,7 @@ void read_string() {
     curr_token.type = STRING;
 }
 
-void read_int() {
+void read_float() {
     int string_idx = 0;
 
     while (isdigit(curr_char())) {
@@ -170,8 +210,8 @@ void read_int() {
         curr_token.type = FLOAT;
     } else {
         curr_token.string[string_idx] = '\0';
-        curr_token.int_value = atoi(curr_token.string);
-        curr_token.type = INTEGER;
+        curr_token.float_value = atoi(curr_token.string);
+        curr_token.type = FLOAT;
     }
 }
 
@@ -220,15 +260,15 @@ void expect_consume(TokenType t) {
 
 ///////////////////// PARSING /////////////////////
 
-Statement *read_statement();
+ParseStatement *read_statement();
 
-Expression *read_expression();
-Expression *read_literal();
-Expression *read_paren_expression();
-Expression *read_list_literal();
-Expression *read_dict_literal();
-bool is_lval(Expression *);
-bool is_stmt(Expression *);
+ParseExpression *read_expression();
+ParseExpression *read_literal();
+ParseExpression *read_paren_expression();
+ParseExpression *read_list_literal();
+ParseExpression *read_dict_literal();
+bool is_lval(ParseExpression *);
+bool is_stmt(ParseExpression *);
 
 int get_precedence(TokenType);
 bool is_operator(TokenType);
@@ -237,51 +277,54 @@ ExpressionType expression_type(TokenType);
 
 /*! Serves as the entrypoint into the parser, taking ownership of
     the string. */
-Statement *read(char *string) {
+ParseStatement *read(char *string) {
     init_lex(string);
     bump_token();
     return read_statement();
 }
 
-Statement *read_statement() {
-    Statement *stmt;
+ParseStatement *read_statement() {
+    ParseStatement *stmt;
 
     if (try_consume(LINE_END)) {
         return NULL;
     } else if (try_consume(DEL)) {
-        int expr_pos = curr_token.pos;
-        Expression *expr = read_expression(PRECEDENCE_LOWEST);
-
-        if (!is_lval(expr)) {
-            error(expr_pos, "Expected lval expression for `del`.");
-        }
-
-        stmt = make_statement_del(expr);
+        expect(IDENT);
+        stmt = parse_alloc(sizeof(ParseStatement));
+        stmt->type = STMT_DEL;
+        stmt->identifier = curr_token.string;
+        bump_token();
         expect_consume(LINE_END);
     } else {
         int expr_pos = curr_token.pos;
-        // We need to parse an expression statement.
-        Expression *expr = read_expression(PRECEDENCE_LOWEST);
+        // We need to parse an ParseExpression ParseStatement.
+        ParseExpression *expr = read_expression(PRECEDENCE_LOWEST);
 
         if (!is_stmt(expr)) {
-            error(expr_pos, "Expected expression-statement.");
+            error(expr_pos, "Expected ParseExpression-ParseStatement.");
         }
 
-        stmt = make_statement_expr(expr);
+        stmt = parse_alloc(sizeof(ParseStatement));
+        stmt->type = STMT_EXPR;
+        stmt->expr = expr;
         expect_consume(LINE_END);
     }
 
     return stmt;
 }
 
-Expression *read_expression(int precedence) {
-    Expression *lhs = read_literal();
+ParseExpression *read_expression(int precedence) {
+    ParseExpression *lhs = read_literal();
 
     while (is_operator(curr_token.type)) {
         if (try_consume(LBRACKET)) {
-            Expression *subscript = read_expression(PRECEDENCE_LOWEST);
+            ParseExpression *subscript = read_expression(PRECEDENCE_LOWEST);
+            ParseExpression *expr = parse_alloc(sizeof(ParseExpression));
+            expr->type = EXPR_SUBSCRIPT;
+            expr->lhs = lhs;
+            expr->rhs = subscript;
             expect_consume(RBRACKET);
-            lhs = make_expression_subscription(lhs, subscript);
+            lhs = expr;
         } else {
             int new_precedence = get_precedence(curr_token.type);
 
@@ -290,27 +333,35 @@ Expression *read_expression(int precedence) {
             }
 
             TokenType op_type = curr_token.type;
+
+            if (op_type == EQUAL && !is_lval(lhs)) {
+                error(curr_token.pos, "LHS is not an L-Value (assignable).");
+            }
+
             bump_token();
 
-            if (is_right_assoc(op_type)) {
-                Expression *rhs = read_expression(new_precedence);
-                lhs = make_expression_binary(expression_type(op_type), lhs, rhs);
-            } else {
-                Expression *rhs = read_expression(new_precedence + 1);
-                lhs = make_expression_binary(expression_type(op_type), lhs, rhs);
-            }
+            ParseExpression *rhs = read_expression(new_precedence +
+                                              is_right_assoc(op_type) ? 0 : 1);
+            ParseExpression *expr = parse_alloc(sizeof(ParseExpression));
+            expr->type = op_type;
+            expr->lhs = lhs;
+            expr->rhs = rhs;
+            lhs = expr;
         }
     }
 
     return lhs;
 }
 
-Expression *read_literal() {
+ParseExpression *read_literal() {
     switch (curr_token.type) {
         case MINUS:
             bump_token();
-            Expression *expr = read_expression(PRECEDENCE_UNARY_NEG);
-            return make_expression_negative(expr);
+            ParseExpression *expr = parse_alloc(sizeof(ParseExpression));
+            expr->type = EXPR_NEGATE;
+            expr->lhs = read_expression(PRECEDENCE_UNARY_NEG);
+            expr->rhs = NULL;
+            return expr;
 
         case PLUS:
             bump_token();
@@ -326,43 +377,45 @@ Expression *read_literal() {
             return read_dict_literal();
 
         case IDENT:
-            expr = make_expression_ident(curr_token.string);
-            bump_token();
-            return expr;
-
-        case INTEGER:
-            expr = make_expression_integer(curr_token.int_value);
+            expr = parse_alloc(sizeof(ParseExpression));
+            expr->type = EXPR_IDENT;
+            expr->string = parse_string_dup(curr_token.string);
             bump_token();
             return expr;
 
         case FLOAT:
-            expr = make_expression_float(curr_token.float_value);
+            expr = parse_alloc(sizeof(ParseExpression));
+            expr->type = EXPR_FLOAT;
+            expr->float_value = curr_token.float_value;
             bump_token();
             return expr;
 
         case STRING:
-            expr = make_expression_string(curr_token.string);
+            expr = parse_alloc(sizeof(ParseExpression));
+            expr->type = EXPR_STRING;
+            expr->string = parse_string_dup(curr_token.string);
             bump_token();
             return expr;
 
         default:
-            error(curr_token.pos, "Unexpected token while reading expression literal.");
+            error(curr_token.pos, "Unexpected token while reading ParseExpression "
+                                  "literal.");
             return NULL;
     }
 }
 
-Expression *read_paren_expression() {
+ParseExpression *read_paren_expression() {
     expect_consume(LPAREN);
-    Expression *expr = read_expression(PRECEDENCE_LOWEST);
+    ParseExpression *expr = read_expression(PRECEDENCE_LOWEST);
     expect_consume(RPAREN);
     //TODO: this can be easily extended to tuples.
     return expr;
 }
 
-Expression *read_list_literal() {
+ParseExpression *read_list_literal() {
     bool first = true;
     //TODO: explain why it's TOTALLY OKAY to reverse the list here!
-    ListNode *list = NULL;
+    ParseListNode *list = NULL;
     expect_consume(LBRACKET);
 
     while (!try_consume(RBRACKET)) {
@@ -372,17 +425,22 @@ Expression *read_list_literal() {
             expect_consume(COMMA);
         }
 
-        Expression *expr = read_expression(PRECEDENCE_LOWEST);
-        list = make_list(list, expr);
+        ParseListNode *next = parse_alloc(sizeof(ParseListNode));
+        next->next = list;
+        next->expr = read_expression(PRECEDENCE_LOWEST);
+        list = next;
     }
 
-    return make_expression_list(list);
+    ParseExpression *expr = parse_alloc(sizeof(ParseExpression));
+    expr->type = EXPR_LIST;
+    expr->list = list;
+    return expr;
 }
 
-Expression *read_dict_literal() {
+ParseExpression *read_dict_literal() {
     bool first = true;
     //TODO: explain why it's TOTALLY OKAY to reverse the dict here!
-    DictNode *dict = NULL;
+    ParseDictNode *dict = NULL;
     expect_consume(LBRACE);
 
     while (!try_consume(RBRACE)) {
@@ -392,19 +450,25 @@ Expression *read_dict_literal() {
             expect_consume(COMMA);
         }
 
-        Expression *key = read_expression(PRECEDENCE_LOWEST);
+        ParseDictNode *next = parse_alloc(sizeof(ParseDictNode));
+        next->next = next;
+        next->key = read_expression(PRECEDENCE_LOWEST);
         expect_consume(COLON);
-        Expression *value = read_expression(PRECEDENCE_LOWEST);
-        dict = make_dict(dict, key, value);
+        next->value = read_expression(PRECEDENCE_LOWEST);
+        dict = next;
     }
 
-    return make_expression_dict(dict);
+    ParseExpression *expr = parse_alloc(sizeof(ParseExpression));
+    expr->type = EXPR_DICT;
+    expr->dict = dict;
+    return expr;
 }
 
-bool is_lval(Expression *expr) {
+bool is_lval(ParseExpression *expr) {
     return expr->type == EXPR_SUBSCRIPT || expr->type == EXPR_IDENT;
 }
-bool is_stmt(Expression *expr) {
+
+bool is_stmt(ParseExpression *expr) {
     return expr->type == EXPR_ASSIGN;
 }
 

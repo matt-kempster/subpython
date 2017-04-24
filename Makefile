@@ -1,4 +1,4 @@
-OBJS=repl.o lex.o parse.o alloc.o print.o
+OBJS=repl.o global.o parse.o eval.o
 
 CFLAGS=-Wall -g -O0 -pedantic -Wextra
 LDFLAGS=-lm
