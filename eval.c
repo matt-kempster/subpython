@@ -13,6 +13,10 @@ struct GlobalVariable {
 int num_vars = 0;
 int max_vars = 0;
 
+struct Reference *ref_table = NULL;
+int num_refs = 0;
+int max_refs = 0;
+
 //// CODE ////
 
 void eval_stmt(ParseStatement *stmt) {
@@ -211,7 +215,26 @@ RefId *get_global_variable(char *name, bool create) {
 }
 
 void delete_global_variable(char *name) {
-    //TODO: Simply delete any variable matching `name` in our global vars.
+    // Delete the global variable with name `name`. Error if no such variable
+    // exists
+    for (int i = 0; i < num_vars; i++) {
+        if (strcmp(name, global_vars[i].name) == 0) {
+            // Remove the variable by sliding the whole array down
+            if (i != num_vars - 1) {
+                global_vars[i].name = global_vars[i + 1].name;
+                global_vars[i].ref = global_vars[i + 1].ref;
+            } else {
+                global_vars[i].name = NULL;
+                global_vars[i].ref = -1;
+            }
+
+            num_vars--;
+            //TODO resize array if too small
+            return;
+        }
+    }
+
+    error(-1, "Could not delete variable `%s`", name);
 }
 
 bool key_equals(RefId a, RefId b) {
@@ -258,7 +281,21 @@ DictNode *alloc_dict_node(DictNode *next,
 
 RefId make_reference() {
     // Allocate a new entry in the reference table, return its refId.
-    // set the new ref's type to VAL_NONE for sanity.
+    // set the new ref's type to VAL_EMPTY for sanity.
+    if (ref_table == NULL) {
+        ref_table = malloc(sizeof(struct Reference) * INITIAL_SIZE);
+        max_refs = INITIAL_SIZE;
+    } else if (num_refs == max_refs) {
+        max_refs *= 2;
+        ref_table = realloc(ref_table, sizeof(struct Reference) * max_vars);
+    }
+
+    if (ref_table == NULL) {
+        error(-1, "%s", "Allocation failed!");
+    }
+
+    ref_table[num_refs].type = VAL_EMPTY;
+    return num_refs++;
 }
 
 RefId make_reference_float(float f) {
@@ -299,10 +336,23 @@ void assign_ref(RefId a, RefId b) {
 RefId key_clone(RefId ref) {
     // Clone any non-deep type, float and string (that's it...) which are the
     // current key types, as well...
-    return 0;
+    switch (deref(ref)->type) {
+        case VAL_FLOAT:
+            return make_reference_float(*deref(ref)->float_value);
+        case VAL_STRING:
+            return make_reference_string(deref(ref)->string_value);
+        default:
+            //TODO error out
+            return 0;
+    }
 }
 
-char *eval_string_dup(char * c) {
+char *eval_string_dup(char *c) {
     // Duplicate the string, allocating the new string onto student memory.
-    return NULL;
+    size_t len = strlen(c);
+    //TODO student memory
+    char *new_str = malloc(len + 1);
+    memcpy(new_str, c, len);
+    new_str[len] = '\0';
+    return new_str;
 }
