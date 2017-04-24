@@ -301,7 +301,7 @@ ParseStatement *read_statement() {
         ParseExpression *expr = read_expression(PRECEDENCE_LOWEST);
 
         if (!is_stmt(expr)) {
-            error(expr_pos, "Expected ParseExpression-ParseStatement.");
+            error(expr_pos, "Expected expression-statement.");
         }
 
         stmt = parse_alloc(sizeof(ParseStatement));
@@ -343,7 +343,7 @@ ParseExpression *read_expression(int precedence) {
             ParseExpression *rhs = read_expression(new_precedence +
                                               is_right_assoc(op_type) ? 0 : 1);
             ParseExpression *expr = parse_alloc(sizeof(ParseExpression));
-            expr->type = op_type;
+            expr->type = expression_type(op_type);
             expr->lhs = lhs;
             expr->rhs = rhs;
             lhs = expr;
