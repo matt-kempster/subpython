@@ -182,8 +182,9 @@ void read_string() {
         curr_token.string[string_idx++] = curr_char();
         bump_char();
     }
-
     bump_char();
+
+    curr_token.string[string_idx] = '\0';
     curr_token.type = STRING;
 }
 

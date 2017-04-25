@@ -28,8 +28,6 @@ void read_eval_print_loop() {
             break;
         }
 
-        printf("Begin parse.\n");
-
         if (setjmp(error_jmp)) {
             goto free_loop;
         }

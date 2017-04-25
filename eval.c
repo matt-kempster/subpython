@@ -57,7 +57,7 @@ void print_ref(RefId ref, bool newline) {
             fprintf(stdout, "%f", *ref_table[ref].float_value);
             break;
         case VAL_STRING:
-            fprintf(stdout, "%s", ref_table[ref].string_value);
+            fprintf(stdout, "\"%s\"", ref_table[ref].string_value);
             break;
         case VAL_LIST:
             fprintf(stdout, "[");
@@ -80,13 +80,18 @@ void print_ref(RefId ref, bool newline) {
 
 
 void eval_stmt(ParseStatement *stmt) {
+    RefId eval_ref;
+
     switch (stmt->type) {
         case STMT_DEL:
-          delete_global_variable(stmt->identifier);
-          break;
+            delete_global_variable(stmt->identifier);
+            break;
         case STMT_EXPR:
-          print_ref(eval_expr(stmt->expr), true);
-          break;
+            eval_ref = eval_expr(stmt->expr);
+            if (stmt->expr->type != EXPR_ASSIGN) {
+                print_ref(eval_ref, true);
+            }
+            break;
     }
 }
 
