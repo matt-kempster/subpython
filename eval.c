@@ -232,8 +232,7 @@ RefId *eval_expr_lval(ParseExpression *expr) {
                 if (node == NULL) {
                     node = alloc_dict_node(deref(lhs)->dict,
                                            key_clone(rhs),
-                                           // Placeholder
-                                           make_reference());
+                                           -1);
                     deref(lhs)->dict = node;
                 }
 
@@ -290,15 +289,8 @@ RefId *get_global_variable(char *name, bool create) {
 
         /* TODO: This is now actually malloc()'d - don't forget to free. */
         global_vars[num_vars].name = strndup(name, strlen(name));
-
-        // Assign a placeholder for now. If `create == true`, then it will be
-        // assigned a real value later, don't worry.
-        RefId ref = make_reference();
-        global_vars[num_vars].ref = ref;
-
-        num_vars++;
-        //TODO: eww @ -1.
-        return &global_vars[num_vars - 1].ref;
+        global_vars[num_vars].ref = -1;
+        return &global_vars[num_vars++].ref;
     } else {
         error(-1, "Could not retrieve variable `%s`", name);
     }
