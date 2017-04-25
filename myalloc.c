@@ -48,16 +48,16 @@ static unsigned char *freeptr;
  * C standard function sbrk(), for example).
  */
 void init_myalloc() {
-
     /*
      * Allocate the entire memory pool, from which our simple allocator will
      * serve allocation requests.
      */
     mem = (unsigned char *) malloc(MEMORY_SIZE);
-    if (mem == 0) {
+
+    if (mem == NULL) {
         fprintf(stderr,
                 "init_myalloc: could not get %d bytes from the system\n",
-		MEMORY_SIZE);
+		            MEMORY_SIZE);
         abort();
     }
 
@@ -69,7 +69,7 @@ void init_myalloc() {
  * Attempt to allocate a chunk of memory of "size" bytes.  Return 0 if
  * allocation fails.
  */
-unsigned char *myalloc(int size, RefId ref) {
+void *myalloc(int size, RefId ref) {
     int requested = sizeof(struct PoolHeader) + size;
     if (freeptr + requested < mem + MEMORY_SIZE) {
         /* Write the header data to the bytes beginning at freeptr */
@@ -98,7 +98,7 @@ void memdump() {
     while (curr < freeptr) {
         curr_header = (struct PoolHeader *) curr;
         curr_data = curr + sizeof(struct PoolHeader);
-        fprintf(stdout, "size %d; refId %d; data: ",
+        fprintf(stdout, "size %lu; refId %d; data: ",
                 curr_header->obj_size - sizeof(struct PoolHeader),
                 curr_header->ref);
         for (int i = 0; i < curr_header->obj_size - sizeof(struct PoolHeader); i++) {

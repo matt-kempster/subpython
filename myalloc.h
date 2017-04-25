@@ -22,7 +22,7 @@ void init_myalloc();
 
 
 /* Attempt to allocate a chunk of memory of "size" bytes. */
-unsigned char *myalloc(int size, RefId ref);
+void *myalloc(int size, RefId ref);
 
 
 /* Print all the information in the pool. */

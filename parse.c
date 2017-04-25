@@ -298,13 +298,8 @@ ParseStatement *read_statement() {
         bump_token();
         expect_consume(LINE_END);
     } else {
-        int expr_pos = curr_token.pos;
         // We need to parse an ParseExpression ParseStatement.
         ParseExpression *expr = read_expression(PRECEDENCE_LOWEST);
-
-        /*if (!is_stmt(expr)) {
-            error(expr_pos, "Expected expression-statement.");
-        }*/
 
         stmt = parse_alloc(sizeof(ParseStatement));
         stmt->type = STMT_EXPR;
@@ -410,13 +405,14 @@ ParseExpression *read_paren_expression() {
     expect_consume(LPAREN);
     ParseExpression *expr = read_expression(PRECEDENCE_LOWEST);
     expect_consume(RPAREN);
-    //TODO: this can be easily extended to tuples.
     return expr;
 }
 
 ParseExpression *read_list_literal() {
+    // We implicitly reverse the list in this method, but it'll be reversed
+    // when we initialize our list in eval.c!
+
     bool first = true;
-    //TODO: explain why it's TOTALLY OKAY to reverse the list here!
     ParseListNode *list = NULL;
     expect_consume(LBRACKET);
 
@@ -441,7 +437,6 @@ ParseExpression *read_list_literal() {
 
 ParseExpression *read_dict_literal() {
     bool first = true;
-    //TODO: explain why it's TOTALLY OKAY to reverse the dict here!
     ParseDictNode *dict = NULL;
     expect_consume(LBRACE);
 

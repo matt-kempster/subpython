@@ -160,7 +160,7 @@ RefId eval_expr(ParseExpression *expr) {
             DictNode *eval_dict = NULL;
             while (parse_dict != NULL) {
                 eval_dict = alloc_dict_node(eval_dict,
-                                            eval_expr(parse_dict->key),
+                                            key_clone(eval_expr(parse_dict->key)),
                                             eval_expr(parse_dict->value));
                 parse_dict = parse_dict->next;
             }
@@ -212,7 +212,7 @@ RefId *eval_expr_lval(ParseExpression *expr) {
                     node = node->next;
 
                     if (node == NULL) {
-                        //TODO: error
+                        error(-1, "%s", "Index out of bounds: %d out of %d.", idx, i);
                     }
                 }
 
@@ -233,13 +233,13 @@ RefId *eval_expr_lval(ParseExpression *expr) {
                     node = alloc_dict_node(deref(lhs)->dict,
                                            key_clone(rhs),
                                            // Placeholder
-                                           make_reference_float(0));
+                                           make_reference());
                     deref(lhs)->dict = node;
                 }
 
                 return &(node->value);
             } else {
-                //TODO: error
+                error(-1, "%s", "Can only subscript lists and dictionaries.");
             }
         case EXPR_IDENT:
             return get_global_variable(expr->string, true);
@@ -259,7 +259,7 @@ float eval_expect_float(ParseExpression *expr) {
     RefId id = eval_expr(expr);
 
     if (deref(id)->type != VAL_FLOAT) {
-        //TODO: Error.
+        error(-1, "%s", "Expected numerical (float) value.");
     }
 
     return *deref(id)->float_value;
@@ -278,19 +278,22 @@ RefId *get_global_variable(char *name, bool create) {
             max_vars = INITIAL_SIZE;
         } else if (num_vars == max_vars) {
             max_vars *= 2;
-            global_vars = realloc(global_vars, sizeof(struct GlobalVariable) * max_vars);
+            global_vars = realloc(global_vars,
+                                  sizeof(struct GlobalVariable) * max_vars);
         }
 
         if (global_vars == NULL) {
             error(-1, "%s", "Allocation failed!");
         }
 
+        //TODO: look for an earlier, deleted slot first?
+
         /* TODO: This is now actually malloc()'d - don't forget to free. */
         global_vars[num_vars].name = strndup(name, strlen(name));
 
         // Assign a placeholder for now. If `create == true`, then it will be
         // assigned a real value later, don't worry.
-        RefId ref = make_reference_float(0);
+        RefId ref = make_reference();
         global_vars[num_vars].ref = ref;
 
         num_vars++;
@@ -301,9 +304,9 @@ RefId *get_global_variable(char *name, bool create) {
     }
 }
 
+/*! Delete the global variable with name `name`. Error if no such variable
+    exists. */
 void delete_global_variable(char *name) {
-    // Delete the global variable with name `name`. Error if no such variable
-    // exists
     for (int i = 0; i < num_vars; i++) {
         if (strcmp(name, global_vars[i].name) == 0) {
             // Remove the variable by sliding the whole array down
@@ -324,6 +327,7 @@ void delete_global_variable(char *name) {
     error(-1, "Could not delete variable `%s`", name);
 }
 
+/*! Returns true if two keys are equal. Only works on strings and floats. */
 bool key_equals(RefId a, RefId b) {
     Reference *ra = deref(a), *rb = deref(b);
 
@@ -345,10 +349,13 @@ bool key_equals(RefId a, RefId b) {
     }
 }
 
+/*! Dereferences a RefId into a Reference* pointer so its type and data can
+    be inspected. */
 Reference *deref(RefId id) {
     return &(ref_table[id]);
 }
 
+/*! ListNode allocation helper. */
 ListNode *alloc_list_node(ListNode *next, RefId value) {
     ListNode *l = myalloc(sizeof(ListNode), value);
     l->next = next;
@@ -356,6 +363,7 @@ ListNode *alloc_list_node(ListNode *next, RefId value) {
     return l;
 }
 
+/*! DictNode allocation helper. */
 DictNode *alloc_dict_node(DictNode *next,
                                  RefId key, RefId value) {
     DictNode *d = myalloc(sizeof(DictNode), value);
@@ -365,6 +373,7 @@ DictNode *alloc_dict_node(DictNode *next,
     return d;
 }
 
+/*! Allocates an empty reference in the ref_table. */
 RefId make_reference() {
     // Allocate a new entry in the reference table, return its refId.
     // set the new ref's type to VAL_EMPTY for sanity.
@@ -376,6 +385,9 @@ RefId make_reference() {
         ref_table = realloc(ref_table, sizeof(struct Reference) * max_refs);
     }
 
+    //TODO: search for an empty ref, first? (i.e. those which have
+    // been sweeped!!)
+
     if (ref_table == NULL) {
         error(-1, "%s", "Allocation failed!");
     }
@@ -384,15 +396,16 @@ RefId make_reference() {
     return num_refs++;
 }
 
+/*! Assigns a float to a new reference in the ref_table. */
 RefId make_reference_float(float f) {
     RefId r = make_reference();
     deref(r)->type = VAL_FLOAT;
-    //TODO: use student memory
     deref(r)->float_value = myalloc(sizeof(float), r);
     *deref(r)->float_value = f;
     return r;
 }
 
+/*! Assigns a string to a new reference in the ref_table. */
 RefId make_reference_string(char *c) {
     RefId r = make_reference();
     deref(r)->type = VAL_STRING;
@@ -400,6 +413,7 @@ RefId make_reference_string(char *c) {
     return r;
 }
 
+/*! Assigns a ListNode* to a new reference in the ref_table. */
 RefId make_reference_list(ListNode *l) {
     RefId r = make_reference();
     deref(r)->type = VAL_LIST;
@@ -407,6 +421,7 @@ RefId make_reference_list(ListNode *l) {
     return r;
 }
 
+/*! Assigns a DictNode* to a new reference in the ref_table. */
 RefId make_reference_dict(DictNode *d) {
     RefId r = make_reference();
     deref(r)->type = VAL_DICT;
@@ -414,11 +429,8 @@ RefId make_reference_dict(DictNode *d) {
     return r;
 }
 
-void assign_ref(RefId a, RefId b) {
-    // Fully copy the Reference struct (ie type and value).
-    memmove(deref(a), deref(b), sizeof(Reference));
-}
-
+/*! Clones a key for a dictionary, so keys aren't accidentally bound to each
+    other. */
 RefId key_clone(RefId ref) {
     // Clone any non-deep type, float and string (that's it...) which are the
     // current key types, as well...
@@ -428,11 +440,13 @@ RefId key_clone(RefId ref) {
         case VAL_STRING:
             return make_reference_string(deref(ref)->string_value);
         default:
-            //TODO error out
+            error(-1, "%s", "Only numerical (floats) and string types are "
+                            "supported as keys!");
             return 0;
     }
 }
 
+/*! Duplicates a string using evaluation-time (student) memory management. */
 char *eval_string_dup(char *c, RefId r) {
     // Duplicate the string, allocating the new string onto student memory.
     size_t len = strlen(c);
