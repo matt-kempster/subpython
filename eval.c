@@ -6,6 +6,8 @@
 
 /* Global variable information. */
 
+#define MAX_DEPTH 4
+
 struct GlobalVariable {
     char *name;
     RefId ref;
@@ -20,7 +22,7 @@ int max_refs = 0;
 
 //// CODE ////
 
-void print_list(struct ListNode *initial) {
+void print_list(struct ListNode *initial, int depth) {
     ListNode *curr_node = initial;
     bool first = true;
 
@@ -30,12 +32,16 @@ void print_list(struct ListNode *initial) {
         } else {
             fprintf(stdout, ", ");
         }
-        print_ref(curr_node->value, false);
+        if (depth != 0) {
+            print_ref(curr_node->value, false, depth - 1);
+        } else {
+            fprintf(stdout, "...");
+        }
         curr_node = curr_node->next;
     }
 }
 
-void print_dict(struct DictNode *initial) {
+void print_dict(struct DictNode *initial, int depth) {
     DictNode *curr_node = initial;
     bool first = true;
 
@@ -45,14 +51,18 @@ void print_dict(struct DictNode *initial) {
         } else {
             fprintf(stdout, ", ");
         }
-        print_ref(curr_node->key, false);
+        print_ref(curr_node->key, false, 0); /* depth irrelevant for keys */
         fprintf(stdout, ": ");
-        print_ref(curr_node->value, false);
+        if (depth != 0) {
+            print_ref(curr_node->value, false, depth - 1);
+        } else {
+            fprintf(stdout, "...");
+        }
         curr_node = curr_node->next;
     }
 }
 
-void print_ref(RefId ref, bool newline) {
+void print_ref(RefId ref, bool newline, int depth) {
     switch (ref_table[ref].type) {
         case VAL_FLOAT:
             fprintf(stdout, "%f", *ref_table[ref].float_value);
@@ -62,12 +72,12 @@ void print_ref(RefId ref, bool newline) {
             break;
         case VAL_LIST:
             fprintf(stdout, "[");
-            print_list(ref_table[ref].list);
+            print_list(ref_table[ref].list, depth);
             fprintf(stdout, "]");
             break;
         case VAL_DICT:
             fprintf(stdout, "{");
-            print_dict(ref_table[ref].dict);
+            print_dict(ref_table[ref].dict, depth);
             fprintf(stdout, "}");
             break;
         default:
@@ -90,7 +100,7 @@ void eval_stmt(ParseStatement *stmt) {
         case STMT_EXPR:
             eval_ref = eval_expr(stmt->expr);
             if (stmt->expr->type != EXPR_ASSIGN) {
-                print_ref(eval_ref, true);
+                print_ref(eval_ref, true, MAX_DEPTH);
             }
             break;
     }
