@@ -15,8 +15,8 @@ typedef struct Reference {
     enum Type {
         VAL_FLOAT,
         VAL_STRING,
-        VAL_LIST,
-        VAL_DICT,
+        VAL_LIST_NODE,
+        VAL_DICT_NODE,
         VAL_EMPTY
     } type;
 
@@ -24,19 +24,17 @@ typedef struct Reference {
         float *float_value;
         int *int_value;
         char *string_value;
-        struct ListNode *list;
-        struct DictNode *dict;
+        struct ListNode *list_node;
+        struct DictNode *dict_node;
     };
 } Reference;
 
 typedef struct ListNode {
-    struct ListNode *next;
-    RefId value;
+    RefId next, value;
 } ListNode;
 
 typedef struct DictNode {
-    struct DictNode *next;
-    RefId key, value;
+    RefId next, key, value;
 } DictNode;
 
 void print_ref(RefId ref, bool newline, int depth);
@@ -57,8 +55,11 @@ struct DictNode *alloc_dict_node(struct DictNode *next,
 RefId make_reference();
 RefId make_reference_float(float f);
 RefId make_reference_string(char *c);
-RefId make_reference_list(ListNode *l);
-RefId make_reference_dict(DictNode *d);
+RefId make_reference_list_node(RefId next, RefId value);
+RefId make_reference_dict_node(RefId next, RefId key, RefId value);
+void allocate_dict_node_into_ref(RefId current, RefId next, RefId key, RefId value);
+RefId make_list_terminator();
+RefId make_dict_terminator();
 void assign_ref(RefId a, RefId b);
 RefId key_clone(RefId ref);
 char *eval_string_dup(char *, RefId);

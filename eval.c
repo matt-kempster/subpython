@@ -21,62 +21,67 @@ int max_refs = 0;
 
 //// CODE ////
 
-void print_list(struct ListNode *initial, int depth) {
-    ListNode *curr_node = initial;
+void print_list(RefId ref, int depth) {
     bool first = true;
 
-    while (curr_node != NULL) {
+    while (deref(ref)->list_node != NULL) {
         if (first) {
             first = false;
         } else {
             fprintf(stdout, ", ");
         }
+
         if (depth != 0) {
-            print_ref(curr_node->value, false, depth - 1);
+            print_ref(deref(ref)->list_node->value, false, depth - 1);
         } else {
             fprintf(stdout, "...");
         }
-        curr_node = curr_node->next;
+
+        ref = deref(ref)->list_node->next;
     }
 }
 
-void print_dict(struct DictNode *initial, int depth) {
-    DictNode *curr_node = initial;
+void print_dict(RefId ref, int depth) {
     bool first = true;
 
-    while (curr_node != NULL) {
+    while (deref(ref)->dict_node != NULL) {
         if (first) {
             first = false;
         } else {
             fprintf(stdout, ", ");
         }
-        print_ref(curr_node->key, false, 0); /* depth irrelevant for keys */
+
+        /* depth irrelevant for keys */
+        print_ref(deref(ref)->dict_node->key, false, 0);
+
         fprintf(stdout, ": ");
+
         if (depth != 0) {
-            print_ref(curr_node->value, false, depth - 1);
+            print_ref(deref(ref)->dict_node->value, false, depth - 1);
         } else {
             fprintf(stdout, "...");
         }
-        curr_node = curr_node->next;
+
+        ref = deref(ref)->dict_node->next;
     }
 }
 
 void print_ref(RefId ref, bool newline, int depth) {
-    switch (ref_table[ref].type) {
+    switch (deref(ref)->type) {
         case VAL_FLOAT:
-            fprintf(stdout, "%f", *ref_table[ref].float_value);
+            fprintf(stdout, "%f", *(deref(ref)->float_value));
             break;
         case VAL_STRING:
-            fprintf(stdout, "\"%s\"", ref_table[ref].string_value);
+            fprintf(stdout, "\"%s\"", deref(ref)->string_value);
             break;
-        case VAL_LIST:
+        case VAL_LIST_NODE:
             fprintf(stdout, "[");
-            print_list(ref_table[ref].list, depth);
+            print_list(ref, depth);
             fprintf(stdout, "]");
             break;
-        case VAL_DICT:
+        case VAL_DICT_NODE:
             fprintf(stdout, "{");
-            print_dict(ref_table[ref].dict, depth);
+            print_dict(ref, depth);
             fprintf(stdout, "}");
             break;
         default:
@@ -117,42 +122,48 @@ RefId eval_expr(ParseExpression *expr) {
     switch (expr->type) {
         case EXPR_SUBSCRIPT:
             lhs = eval_expr(expr->lhs);
-            if (deref(lhs)->type == VAL_LIST) {
+
+            if (deref(lhs)->type == VAL_LIST_NODE) {
                 /* If we have a list, then floor the float to make an index.
                  * (it's the best we can do... without reintroducing ints.) */
                 int idx = (int) eval_expect_float(expr->rhs);
-                ListNode *node = deref(lhs)->list;
+                RefId node_ref = lhs;
+
+                if (deref(node_ref)->list_node == NULL) {
+                    error(-1, "%s", "Index out of bounds: %d out of 0.", idx);
+                }
 
                 /* Find the `idx`th entry in the list. */
                 for (int i = 0; i < idx; i++) {
-                    node = node->next;
+                    node_ref = deref(node_ref)->list_node->next;
 
-                    if (node == NULL) {
+                    if (deref(node_ref)->list_node == NULL) {
                         error(-1, "%s", "Index out of bounds: %d out of %d.", idx, i);
                     }
                 }
 
-                return node->value;
-            } else if (deref(lhs)->type == VAL_DICT) {
+                return deref(node_ref)->list_node->value;
+            } else if (deref(lhs)->type == VAL_DICT_NODE) {
                 /* If we have a dict, then evaluate our rhs key.  */
                 rhs = eval_expr(expr->rhs);
-                DictNode *node = deref(lhs)->dict;
+                RefId node_ref = lhs;
 
                 /* Iterate until we get to the end, or until we have that our
                  * rhs key matches a key in the list. */
-                while (node != NULL) {
-                    if (key_equals(node->key, rhs)) {
+                while (deref(node_ref)->dict_node != NULL) {
+                    if (key_equals(deref(node_ref)->dict_node->key, rhs)) {
                         break;
                     }
-                    node = node->next;
+
+                    node_ref = deref(node_ref)->dict_node->next;
                 }
 
                 /* If we got NULL, then that means our key is missing. */
-                if (node == NULL) {
+                if (deref(node_ref)->dict_node == NULL) {
                     error(-1, "%s", "Key cannot be found!");
                 }
 
-                return node->value;
+                return deref(node_ref)->dict_node->value;
             } else {
                 error(-1, "%s", "Can only subscript lists and dictionaries.");
             }
@@ -171,28 +182,30 @@ RefId eval_expr(ParseExpression *expr) {
             /* Construct a new list by reversing the parse list, which was the
              * the reversed version of the parsed list = an in-order list! */
             ParseListNode *parse_list = expr->list;
-            ListNode *eval_list = NULL;
+            RefId eval_list_node = make_list_terminator();
 
             while (parse_list != NULL) {
-                eval_list = alloc_list_node(eval_list,
-                                            eval_expr(parse_list->expr));
+                eval_list_node = make_reference_list_node(eval_list_node,
+                                                     eval_expr(parse_list->expr));
                 parse_list = parse_list->next;
             }
 
-            return make_reference_list(eval_list);
+            return eval_list_node;
         }
         case EXPR_DICT: {
             /* Similar to list code. Almost identical, but s/List/Dict, and
              * there are both keys and values... */
             ParseDictNode *parse_dict = expr->dict;
-            DictNode *eval_dict = NULL;
+            RefId eval_dict_node = make_dict_terminator();
+
             while (parse_dict != NULL) {
-                eval_dict = alloc_dict_node(eval_dict,
-                                            key_clone(eval_expr(parse_dict->key)),
-                                            eval_expr(parse_dict->value));
+                eval_dict_node = make_reference_dict_node(eval_dict_node,
+                                                     eval_expr(parse_dict->key),
+                                                     eval_expr(parse_dict->value));
                 parse_dict = parse_dict->next;
             }
-            return make_reference_dict(eval_dict);
+
+            return eval_dict_node;
         }
         case EXPR_ASSIGN: {
             /* eval_expr_lval returns a RefId*, and we set it to the rhs ref.*/
@@ -232,39 +245,51 @@ RefId *eval_expr_lval(ParseExpression *expr) {
     switch (expr->type) {
         case EXPR_SUBSCRIPT:
             lhs = eval_expr(expr->lhs);
-            if (deref(lhs)->type == VAL_LIST) {
+
+            if (deref(lhs)->type == VAL_LIST_NODE) {
+                /* If we have a list, then floor the float to make an index.
+                 * (it's the best we can do... without reintroducing ints.) */
                 int idx = (int) eval_expect_float(expr->rhs);
-                ListNode *node = deref(lhs)->list;
+                RefId node_ref = lhs;
 
+                if (deref(node_ref)->list_node == NULL) {
+                    error(-1, "%s", "Index out of bounds: %d out of 0.", idx);
+                }
+
+                /* Find the `idx`th entry in the list. */
                 for (int i = 0; i < idx; i++) {
-                    node = node->next;
+                    node_ref = deref(node_ref)->list_node->next;
 
-                    if (node == NULL) {
+                    if (deref(node_ref)->list_node == NULL) {
                         error(-1, "%s", "Index out of bounds: %d out of %d.", idx, i);
                     }
                 }
 
-                return &(node->value);
-            } else if (deref(lhs)->type == VAL_DICT) {
+                return &deref(node_ref)->list_node->value;
+            } else if (deref(lhs)->type == VAL_DICT_NODE) {
+                /* If we have a dict, then evaluate our rhs key.  */
                 rhs = eval_expr(expr->rhs);
-                DictNode *node = deref(lhs)->dict;
+                RefId node_ref = lhs;
 
-                while (node != NULL) {
-                    if (key_equals(node->key, rhs)) {
+                /* Iterate until we get to the end, or until we have that our
+                 * rhs key matches a key in the list. */
+                while (deref(node_ref)->dict_node != NULL) {
+                    if (key_equals(deref(node_ref)->dict_node->key, rhs)) {
                         break;
                     }
 
-                    node = node->next;
+                    node_ref = deref(node_ref)->dict_node->next;
                 }
 
-                if (node == NULL) {
-                    node = alloc_dict_node(deref(lhs)->dict,
-                                           key_clone(rhs),
-                                           -1);
-                    deref(lhs)->dict = node;
+                /* If we got NULL, then that means our key is missing. */
+                if (deref(node_ref)->dict_node == NULL) {
+                    allocate_dict_node_into_ref(node_ref,
+                                                make_dict_terminator(),
+                                                rhs,
+                                                make_reference());
                 }
 
-                return &(node->value);
+                return &deref(node_ref)->dict_node->value;
             } else {
                 error(-1, "%s", "Can only subscript lists and dictionaries.");
             }
@@ -378,8 +403,8 @@ bool key_equals(RefId a, RefId b) {
             return *ra->float_value == *rb->float_value;
         case VAL_STRING:
             return strcmp(ra->string_value, rb->string_value) == 0;
-        case VAL_LIST:
-        case VAL_DICT:
+        case VAL_LIST_NODE:
+        case VAL_DICT_NODE:
             error(-1, "%s", "Dict and List types are not valid key types.");
         case VAL_EMPTY:
         default:
@@ -394,21 +419,26 @@ Reference *deref(RefId id) {
 }
 
 /*! ListNode allocation helper. */
-ListNode *alloc_list_node(ListNode *next, RefId value) {
-    ListNode *l = myalloc(sizeof(ListNode), value);
+RefId make_reference_list_node(RefId next, RefId value) {
+    RefId r = make_reference();
+    ListNode *l = myalloc(sizeof(ListNode), r);
     l->next = next;
     l->value = value;
-    return l;
+    deref(r)->type = VAL_LIST_NODE;
+    deref(r)->list_node = l;
+    return r;
 }
 
 /*! DictNode allocation helper. */
-DictNode *alloc_dict_node(DictNode *next,
-                                 RefId key, RefId value) {
-    DictNode *d = myalloc(sizeof(DictNode), value);
+RefId make_reference_dict_node(RefId next, RefId key, RefId value) {
+    RefId r = make_reference();
+    DictNode *d = myalloc(sizeof(DictNode), r);
     d->next = next;
     d->key = key;
     d->value = value;
-    return d;
+    deref(r)->type = VAL_DICT_NODE;
+    deref(r)->dict_node = d;
+    return r;
 }
 
 /*! Allocates an empty reference in the ref_table. */
@@ -451,19 +481,26 @@ RefId make_reference_string(char *c) {
     return r;
 }
 
-/*! Assigns a ListNode* to a new reference in the ref_table. */
-RefId make_reference_list(ListNode *l) {
+void allocate_dict_node_into_ref(RefId current, RefId next, RefId key, RefId value) {
+    DictNode *d = myalloc(sizeof(DictNode), current);
+    d->next = next;
+    d->key = key;
+    d->value = value;
+    deref(current)->type = VAL_DICT_NODE;
+    deref(current)->dict_node = d;
+}
+
+RefId make_list_terminator() {
     RefId r = make_reference();
-    deref(r)->type = VAL_LIST;
-    deref(r)->list = l;
+    deref(r)->type = VAL_LIST_NODE;
+    deref(r)->list_node = NULL;
     return r;
 }
 
-/*! Assigns a DictNode* to a new reference in the ref_table. */
-RefId make_reference_dict(DictNode *d) {
+RefId make_dict_terminator() {
     RefId r = make_reference();
-    deref(r)->type = VAL_DICT;
-    deref(r)->dict = d;
+    deref(r)->type = VAL_DICT_NODE;
+    deref(r)->dict_node = NULL;
     return r;
 }
 
