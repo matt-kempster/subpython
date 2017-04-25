@@ -40,6 +40,7 @@ typedef enum TokenType {
     LINE_END,    /*!< Hit end of line. */
 
     DEL,         /*!< Deletion keyword. */
+    GC,          /*!< GC "keyword". */
 
     RPAREN,      /*!< Right parenthesis. */
     LPAREN,      /*!< Left parenthesis. */
@@ -76,7 +77,8 @@ typedef struct Token {
 
 typedef enum StatementType {
     STMT_DEL,
-    STMT_EXPR
+    STMT_EXPR,
+    STMT_GC
 } StatementType;
 
 typedef struct ParseStatement {

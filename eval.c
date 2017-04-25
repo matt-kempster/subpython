@@ -12,7 +12,6 @@ struct GlobalVariable {
     char *name;
     RefId ref;
 } *global_vars = NULL;
-
 int num_vars = 0;
 int max_vars = 0;
 
@@ -103,6 +102,12 @@ void eval_stmt(ParseStatement *stmt) {
                 print_ref(eval_ref, true, MAX_DEPTH);
             }
             break;
+        case STMT_GC:
+            printf("Garbage collector invoked!\n");
+            //TODO: Actually invoke the garbage collector here.
+            // this is when the student's mark-and-sweep code is actually
+            // supposed to be implemented.
+            break;
     }
 }
 
@@ -113,22 +118,28 @@ RefId eval_expr(ParseExpression *expr) {
         case EXPR_SUBSCRIPT:
             lhs = eval_expr(expr->lhs);
             if (deref(lhs)->type == VAL_LIST) {
+                /* If we have a list, then floor the float to make an index.
+                 * (it's the best we can do... without reintroducing ints.) */
                 int idx = (int) eval_expect_float(expr->rhs);
                 ListNode *node = deref(lhs)->list;
 
+                /* Find the `idx`th entry in the list. */
                 for (int i = 0; i < idx; i++) {
                     node = node->next;
 
                     if (node == NULL) {
-                        //TODO: error
+                        error(-1, "%s", "Index out of bounds: %d out of %d.", idx, i);
                     }
                 }
 
                 return node->value;
             } else if (deref(lhs)->type == VAL_DICT) {
+                /* If we have a dict, then evaluate our rhs key.  */
                 rhs = eval_expr(expr->rhs);
                 DictNode *node = deref(lhs)->dict;
 
+                /* Iterate until we get to the end, or until we have that our
+                 * rhs key matches a key in the list. */
                 while (node != NULL) {
                     if (key_equals(node->key, rhs)) {
                         break;
@@ -136,36 +147,43 @@ RefId eval_expr(ParseExpression *expr) {
                     node = node->next;
                 }
 
+                /* If we got NULL, then that means our key is missing. */
                 if (node == NULL) {
                     error(-1, "%s", "Key cannot be found!");
                 }
 
                 return node->value;
             } else {
-                //TODO: error
+                error(-1, "%s", "Can only subscript lists and dictionaries.");
             }
         case EXPR_NEGATE: {
             float float_val = eval_expect_float(expr->lhs);
             return make_reference_float(-float_val);
         }
         case EXPR_IDENT:
-            // We dereference, because get_global_variable returns a RefId*
+            /* We dereference, because get_global_variable returns a RefId*. */
             return *get_global_variable(expr->string, false);
         case EXPR_STRING:
             return make_reference_string(expr->string);
         case EXPR_FLOAT:
             return make_reference_float(expr->float_value);
         case EXPR_LIST: {
+            /* Construct a new list by reversing the parse list, which was the
+             * the reversed version of the parsed list = an in-order list! */
             ParseListNode *parse_list = expr->list;
             ListNode *eval_list = NULL;
+
             while (parse_list != NULL) {
                 eval_list = alloc_list_node(eval_list,
                                             eval_expr(parse_list->expr));
                 parse_list = parse_list->next;
             }
+
             return make_reference_list(eval_list);
         }
         case EXPR_DICT: {
+            /* Similar to list code. Almost identical, but s/List/Dict, and
+             * there are both keys and values... */
             ParseDictNode *parse_dict = expr->dict;
             DictNode *eval_dict = NULL;
             while (parse_dict != NULL) {
@@ -177,13 +195,13 @@ RefId eval_expr(ParseExpression *expr) {
             return make_reference_dict(eval_dict);
         }
         case EXPR_ASSIGN: {
-            RefId *lval = eval_expr_lval(expr->lhs);
+            /* eval_expr_lval returns a RefId*, and we set it to the rhs ref.*/
             rhs = eval_expr(expr->rhs);
+            RefId *lval = eval_expr_lval(expr->lhs);
             *lval = rhs;
             return *lval;
         }
         case EXPR_ADD: {
-            //TODO: add strings, not just floats. (trivial)
             float lhs_val = eval_expect_float(expr->lhs);
             float rhs_val = eval_expect_float(expr->rhs);
             return make_reference_float(lhs_val + rhs_val);
@@ -264,6 +282,8 @@ RefId *eval_expr_lval(ParseExpression *expr) {
     }
 }
 
+/*! Evaluate and expect a float, erroring if it's not a float, then returning
+    that float... */
 float eval_expect_float(ParseExpression *expr) {
     RefId id = eval_expr(expr);
 
@@ -274,33 +294,49 @@ float eval_expect_float(ParseExpression *expr) {
     return *deref(id)->float_value;
 }
 
+/*! Tries to retrieve a global variable's reference, creating it if `create`
+    is true. */
 RefId *get_global_variable(char *name, bool create) {
     for (int i = 0; i < num_vars; i++) {
-        if (strcmp(name, global_vars[i].name) == 0) {
+        if (global_vars[i].name != NULL &&
+            strcmp(name, global_vars[i].name) == 0) {
             return &global_vars[i].ref;
         }
     }
 
     if (create) {
         if (global_vars == NULL) {
-            global_vars = malloc(sizeof(struct GlobalVariable) * INITIAL_SIZE);
+            /* If our global vars array is NULL, let's make a new one. */
+            global_vars = calloc(sizeof(struct GlobalVariable), INITIAL_SIZE);
             max_vars = INITIAL_SIZE;
         } else if (num_vars == max_vars) {
+            /* Otherwise, double its size (the JVM internal source said this
+             * was a good resizing semantic, don't sue me!), and zero it out. */
             max_vars *= 2;
             global_vars = realloc(global_vars,
                                   sizeof(struct GlobalVariable) * max_vars);
+            // Zero so our loop searching for a new spot doesn't fail.
+            memset(global_vars + num_vars, 0,
+                   sizeof(struct GlobalVariable) * num_vars);
         }
 
         if (global_vars == NULL) {
             error(-1, "%s", "Allocation failed!");
         }
 
-        //TODO: look for an earlier, deleted slot first?
+        /* Search for a new variable. */
+        for (int i = 0; i < max_vars; i++) {
+            if (global_vars[i].name == NULL) {
+                num_vars++;
+                global_vars[i].name = strndup(name, strlen(name));
+                global_vars[i].ref = -1;
+                return &global_vars[i].ref;
+            }
+        }
 
-        /* TODO: This is now actually malloc()'d - don't forget to free. */
-        global_vars[num_vars].name = strndup(name, strlen(name));
-        global_vars[num_vars].ref = -1;
-        return &global_vars[num_vars++].ref;
+        /* We made space for at least 1 new var up there,
+         * so this can't happen..! I swear! */
+        UNREACHABLE();
     } else {
         error(-1, "Could not retrieve variable `%s`", name);
     }
@@ -321,7 +357,7 @@ void delete_global_variable(char *name) {
             }
 
             num_vars--;
-            //TODO resize array if too small
+            //TODO resize array if too small. We'd need to compact it too.
             return;
         }
     }

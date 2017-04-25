@@ -229,6 +229,8 @@ void read_identifier() {
 
     if (strcmp(curr_token.string, "del") == 0) {
         curr_token.type = DEL;
+    } else if (strcmp(curr_token.string, "gc") == 0) {
+        curr_token.type = GC;
     } else {
         curr_token.type = IDENT;
     }
@@ -245,11 +247,38 @@ bool try_consume(TokenType t) {
     }
 }
 
+const char *tok_str(TokenType t) {
+    switch (t) {
+      case STREAM_END: return "<STREAM_END>";
+      case LINE_END: return "<LINE_END>";
+      case DEL: return "DEL";
+      case GC: return "GC";
+      case RPAREN: return ")";
+      case LPAREN: return "(";
+      case LBRACKET: return "[";
+      case RBRACKET: return "]";
+      case LBRACE: return "{";
+      case RBRACE: return "}";
+      case COLON: return ":";
+      case EQUAL: return "=";
+      case PLUS: return "+";
+      case MINUS: return "-";
+      case ASTERISK: return "*";
+      case SLASH: return "/";
+      case DOT: return ".";
+      case COMMA: return ",";
+      case FLOAT: return "<FLOAT>";
+      case STRING: return "<STRING>";
+      case IDENT: return "<IDENT>";
+      default: return "<UNKNOWN>";
+    }
+}
+
 /*! Expects a token, otherwise throws an error. */
 void expect(TokenType t) {
     if (curr_token.type != t) {
-        //TODO: make this actual strings...
-        error(curr_token.pos, "Expected token %d, got %d.", t, curr_token.type);
+        error(curr_token.pos, "Expected token `%s`, got `%s`.",
+              tok_str(t), tok_str(curr_token.type));
     }
 }
 
@@ -290,6 +319,13 @@ ParseStatement *read_statement() {
 
     if (try_consume(LINE_END)) {
         return NULL;
+    } else if (try_consume(GC)) {
+        expect_consume(LPAREN);
+        expect_consume(RPAREN);
+
+        stmt = parse_alloc(sizeof(ParseStatement));
+        stmt->type = STMT_GC;
+        expect_consume(LINE_END);
     } else if (try_consume(DEL)) {
         expect(IDENT);
         stmt = parse_alloc(sizeof(ParseStatement));
