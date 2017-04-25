@@ -180,6 +180,7 @@ void read_string() {
     while (curr_char() != start) {
         //TODO: easy to add escapes.
         curr_token.string[string_idx++] = curr_char();
+        bump_char();
     }
 
     bump_char();
@@ -451,7 +452,7 @@ ParseExpression *read_dict_literal() {
         }
 
         ParseDictNode *next = parse_alloc(sizeof(ParseDictNode));
-        next->next = next;
+        next->next = dict;
         next->key = read_expression(PRECEDENCE_LOWEST);
         expect_consume(COLON);
         next->value = read_expression(PRECEDENCE_LOWEST);

@@ -81,12 +81,12 @@ void print_ref(RefId ref, bool newline) {
 
 void eval_stmt(ParseStatement *stmt) {
     switch (stmt->type) {
-        case STMT_DEL: {
+        case STMT_DEL:
           delete_global_variable(stmt->identifier);
-        }
-        case STMT_EXPR: {
+          break;
+        case STMT_EXPR:
           print_ref(eval_expr(stmt->expr), true);
-        }
+          break;
     }
 }
 
@@ -99,6 +99,7 @@ RefId eval_expr(ParseExpression *expr) {
             if (deref(lhs)->type == VAL_LIST) {
                 int idx = (int) eval_expect_float(expr->rhs);
                 ListNode *node = deref(lhs)->list;
+
                 for (int i = 0; i < idx; i++) {
                     node = node->next;
 
@@ -116,10 +117,11 @@ RefId eval_expr(ParseExpression *expr) {
                     if (key_equals(node->key, rhs)) {
                         break;
                     }
+                    node = node->next;
                 }
 
                 if (node == NULL) {
-                    //TODO: error, value can't be found.
+                    error(-1, "%s", "Key cannot be found!");
                 }
 
                 return node->value;
@@ -196,7 +198,20 @@ RefId *eval_expr_lval(ParseExpression *expr) {
     switch (expr->type) {
         case EXPR_SUBSCRIPT:
             lhs = eval_expr(expr->lhs);
-            if (deref(lhs)->type == VAL_DICT) {
+            if (deref(lhs)->type == VAL_LIST) {
+                int idx = (int) eval_expect_float(expr->rhs);
+                ListNode *node = deref(lhs)->list;
+
+                for (int i = 0; i < idx; i++) {
+                    node = node->next;
+
+                    if (node == NULL) {
+                        //TODO: error
+                    }
+                }
+
+                return &(node->value);
+            } else if (deref(lhs)->type == VAL_DICT) {
                 rhs = eval_expr(expr->rhs);
                 DictNode *node = deref(lhs)->dict;
 
@@ -204,6 +219,8 @@ RefId *eval_expr_lval(ParseExpression *expr) {
                     if (key_equals(node->key, rhs)) {
                         break;
                     }
+
+                    node = node->next;
                 }
 
                 if (node == NULL) {
@@ -216,7 +233,7 @@ RefId *eval_expr_lval(ParseExpression *expr) {
 
                 return &(node->value);
             } else {
-                //TODO: error, no other type can be subscripted as an LVAL
+                //TODO: error
             }
         case EXPR_IDENT:
             return get_global_variable(expr->string, true);
@@ -308,7 +325,7 @@ bool key_equals(RefId a, RefId b) {
 
     switch (ra->type) {
         case VAL_FLOAT:
-            return ra->float_value == rb->float_value;
+            return *ra->float_value == *rb->float_value;
         case VAL_STRING:
             return strcmp(ra->string_value, rb->string_value) == 0;
         case VAL_LIST:
