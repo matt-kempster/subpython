@@ -1,6 +1,8 @@
 #ifndef EVAL_H
 #define EVAL_H
 
+#include "global.h"
+
 typedef int RefId;
 
 //TODO: should these go in global?
@@ -59,6 +61,6 @@ RefId make_reference_list(ListNode *l);
 RefId make_reference_dict(DictNode *d);
 void assign_ref(RefId a, RefId b);
 RefId key_clone(RefId ref);
-char *eval_string_dup(char *);
+char *eval_string_dup(char *, RefId);
 
 #endif /* EVAL_H */

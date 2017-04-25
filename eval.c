@@ -2,6 +2,7 @@
 
 #include "global.h"
 #include "eval.h"
+#include "myalloc.h"
 
 /* Global variable information. */
 
@@ -284,7 +285,9 @@ RefId *get_global_variable(char *name, bool create) {
             error(-1, "%s", "Allocation failed!");
         }
 
-        global_vars[num_vars].name = eval_string_dup(name);
+        /* TODO: This is now actually malloc()'d - don't forget to free. */
+        global_vars[num_vars].name = strndup(name, strlen(name));
+
         // Assign a placeholder for now. If `create == true`, then it will be
         // assigned a real value later, don't worry.
         RefId ref = make_reference_float(0);
@@ -347,7 +350,7 @@ Reference *deref(RefId id) {
 }
 
 ListNode *alloc_list_node(ListNode *next, RefId value) {
-    ListNode *l = malloc(sizeof(ListNode));
+    ListNode *l = myalloc(sizeof(ListNode), value);
     l->next = next;
     l->value = value;
     return l;
@@ -355,8 +358,7 @@ ListNode *alloc_list_node(ListNode *next, RefId value) {
 
 DictNode *alloc_dict_node(DictNode *next,
                                  RefId key, RefId value) {
-    //TODO: replace with student allocator.
-    DictNode *d = malloc(sizeof(DictNode));
+    DictNode *d = myalloc(sizeof(DictNode), value);
     d->next = next;
     d->key = key;
     d->value = value;
@@ -386,7 +388,7 @@ RefId make_reference_float(float f) {
     RefId r = make_reference();
     deref(r)->type = VAL_FLOAT;
     //TODO: use student memory
-    deref(r)->float_value = malloc(sizeof(float));
+    deref(r)->float_value = myalloc(sizeof(float), r);
     *deref(r)->float_value = f;
     return r;
 }
@@ -394,7 +396,7 @@ RefId make_reference_float(float f) {
 RefId make_reference_string(char *c) {
     RefId r = make_reference();
     deref(r)->type = VAL_STRING;
-    deref(r)->string_value = eval_string_dup(c);
+    deref(r)->string_value = eval_string_dup(c, r);
     return r;
 }
 
@@ -431,11 +433,10 @@ RefId key_clone(RefId ref) {
     }
 }
 
-char *eval_string_dup(char *c) {
+char *eval_string_dup(char *c, RefId r) {
     // Duplicate the string, allocating the new string onto student memory.
     size_t len = strlen(c);
-    //TODO student memory
-    char *new_str = malloc(len + 1);
+    char *new_str = myalloc(len + 1, r);
     memcpy(new_str, c, len);
     new_str[len] = '\0';
     return new_str;

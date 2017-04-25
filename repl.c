@@ -8,13 +8,17 @@
 #include <stdio.h>
 #include <malloc.h>
 
-#include "global.h"
-#include "parse.h"
 #include "eval.h"
+#include "global.h"
+#include "myalloc.h"
+#include "parse.h"
 
 void read_eval_print_loop() {
     char *line;
     size_t size;
+
+    MEMORY_SIZE = 0x0fff;
+    init_myalloc();
 
     while (true) {
         printf("> ");
@@ -39,6 +43,8 @@ void read_eval_print_loop() {
         }
 
         eval_stmt(stmt);
+
+        memdump();
 
 free_loop:
         free(line);
