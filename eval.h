@@ -37,6 +37,7 @@ typedef struct DictNode {
     RefId key, value;
 } DictNode;
 
+void print_ref(RefId ref, bool newline);
 
 void eval_stmt(struct ParseStatement *stmt);
 RefId eval_expr(struct ParseExpression *expr);

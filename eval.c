@@ -19,14 +19,74 @@ int max_refs = 0;
 
 //// CODE ////
 
+void print_list(struct ListNode *initial) {
+    ListNode *curr_node = initial;
+    bool first = true;
+
+    while (curr_node != NULL) {
+        if (first) {
+            first = false;
+        } else {
+            fprintf(stdout, ", ");
+        }
+        print_ref(curr_node->value, false);
+        curr_node = curr_node->next;
+    }
+}
+
+void print_dict(struct DictNode *initial) {
+    DictNode *curr_node = initial;
+    bool first = true;
+
+    while (curr_node != NULL) {
+        if (first) {
+            first = false;
+        } else {
+            fprintf(stdout, ", ");
+        }
+        print_ref(curr_node->key, false);
+        fprintf(stdout, ": ");
+        print_ref(curr_node->value, false);
+        curr_node = curr_node->next;
+    }
+}
+
+void print_ref(RefId ref, bool newline) {
+    switch (ref_table[ref].type) {
+        case VAL_FLOAT:
+            fprintf(stdout, "%f", *ref_table[ref].float_value);
+            break;
+        case VAL_STRING:
+            fprintf(stdout, "%s", ref_table[ref].string_value);
+            break;
+        case VAL_LIST:
+            fprintf(stdout, "[");
+            print_list(ref_table[ref].list);
+            fprintf(stdout, "]");
+            break;
+        case VAL_DICT:
+            fprintf(stdout, "{");
+            print_dict(ref_table[ref].dict);
+            fprintf(stdout, "}");
+            break;
+        default:
+            fprintf(stdout, "Unrecognized reference type\n");
+            break;
+    }
+    if (newline) {
+        fprintf(stdout, "\n");
+    }
+}
+
+
 void eval_stmt(ParseStatement *stmt) {
     switch (stmt->type) {
-      case STMT_DEL: {
-        delete_global_variable(stmt->identifier);
-      }
-      case STMT_EXPR: {
-        eval_expr(stmt->expr);
-      }
+        case STMT_DEL: {
+          delete_global_variable(stmt->identifier);
+        }
+        case STMT_EXPR: {
+          print_ref(eval_expr(stmt->expr), true);
+        }
     }
 }
 
@@ -83,6 +143,7 @@ RefId eval_expr(ParseExpression *expr) {
             while (parse_list != NULL) {
                 eval_list = alloc_list_node(eval_list,
                                             eval_expr(parse_list->expr));
+                parse_list = parse_list->next;
             }
             return make_reference_list(eval_list);
         }
@@ -93,6 +154,7 @@ RefId eval_expr(ParseExpression *expr) {
                 eval_dict = alloc_dict_node(eval_dict,
                                             eval_expr(parse_dict->key),
                                             eval_expr(parse_dict->value));
+                parse_dict = parse_dict->next;
             }
             return make_reference_dict(eval_dict);
         }
@@ -287,7 +349,7 @@ RefId make_reference() {
         max_refs = INITIAL_SIZE;
     } else if (num_refs == max_refs) {
         max_refs *= 2;
-        ref_table = realloc(ref_table, sizeof(struct Reference) * max_vars);
+        ref_table = realloc(ref_table, sizeof(struct Reference) * max_refs);
     }
 
     if (ref_table == NULL) {

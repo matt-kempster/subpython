@@ -300,9 +300,9 @@ ParseStatement *read_statement() {
         // We need to parse an ParseExpression ParseStatement.
         ParseExpression *expr = read_expression(PRECEDENCE_LOWEST);
 
-        if (!is_stmt(expr)) {
+        /*if (!is_stmt(expr)) {
             error(expr_pos, "Expected expression-statement.");
-        }
+        }*/
 
         stmt = parse_alloc(sizeof(ParseStatement));
         stmt->type = STMT_EXPR;
